@@ -6,8 +6,8 @@
 
 ## Sommaire
 
-1. [Objectif métier](#1-objectif-métier)
-2. [Architecture technique](#2-architecture-technique)
+1. [Objectif du présent POC](#1-objectif-du-présent-poc)
+2. [Architecture technique du POC](#2-architecture-technique-du-poc)
 3. [Environnement et démarrage](#3-environnement-et-démarrage)
 4. [Round 1 — Infra + Simulation Strava-like](#4-round-1--infra--simulation-strava-like)
 5. [Round 2 — Ingestion XLSX + ETL Silver + Google Maps](#5-round-2--ingestion-xlsx--etl-silver--google-maps)
@@ -21,18 +21,54 @@
 
 ---
 
-## 1. Objectif métier
+## 1. Objectif du présent POC
 
-L'entreprise souhaite attribuer automatiquement des avantages sportifs à ses salariés :
+Ce POC a été initié à la demande de Juliette, Co-Fondatrice de Sport Data Solution. L'email de cadrage initial se trouve dans [documentation/mailjuliette.txt](documentation/mailjuliette.txt) ; la note de cadrage formelle complète est disponible dans [documentation/Note+de+cadrage+_+POC+Avantages+Sportif.pdf](documentation/Note+de+cadrage+_+POC+Avantages+Sportif.pdf).
 
-- **Prime de 5 %** du salaire brut pour les salariés qui viennent travailler à pied ou à vélo **et** dont le domicile est à moins de 15 km (marche/running) ou 25 km (vélo/trottinette) du bureau.
+**Contexte** : après un premier système de récompense des actions environnementales, l'entreprise souhaite maintenant encourager la pratique sportive des collaborateurs via deux avantages :
+
+- **Prime de 5 %** du salaire brut pour les salariés venant au bureau à pied ou à vélo, dont le domicile est à moins de 15 km (marche/running) ou 25 km (vélo/trottinette). L'éligibilité est basée sur le déclaratif salarié, contrôlé via l'API Google Maps.
 - **5 journées bien-être** pour les salariés ayant réalisé au moins 15 activités sportives sur les 12 derniers mois.
+
+Une notification Slack est automatiquement envoyée dans le channel dédié à chaque activité physique enregistrée, pour favoriser l'émulation entre collaborateurs.
+
+**Objectifs du POC :**
+1. Tester la faisabilité technique de la solution.
+2. Comprendre quelles données collecter pour évaluer l'activité physique des salariés.
+3. Calculer l'impact financier des avantages proposés.
 
 Les paramètres (taux, seuils, nombre de jours) sont stockés en base dans la table `config` et peuvent être modifiés sans toucher au code.
 
+### Données source fournies
+
+| Fichier | Emplacement | Contenu |
+|---------|-------------|---------|
+| `Donne_es_RH.xlsx` | `data/raw/` · `documentation/` | 161 salariés : identifiant, BU, adresse domicile, mode de déplacement déclaré, salaire brut |
+| `Donne_es_Sportive.xlsx` | `data/raw/` · `documentation/` | 999 lignes (95 salariés avec sport déclaré) : type de sport pratiqué |
+
+Ces deux fichiers XLSX constituent les seules données réelles du projet. Ils sont gitignorés depuis `data/raw/` (données RH sensibles) mais conservés dans `documentation/` à titre de référence. Les données d'activité sportive des 12 derniers mois sont simulées par le générateur Monte Carlo (Round 1) en attendant un branchement direct sur l'API Strava.
+
+### Démarche et choix techniques pour le POC
+
+Le POC couvre l'ensemble du périmètre défini dans la note de cadrage (infrastructure, simulation Strava, ETL Medallion, contrôles qualité, orchestration, Power BI), tout en faisant des **choix délibérément plus simples** que ceux qui seront retenus en production :
+
+| Composant | Choix POC | Choix production envisagé |
+|-----------|-----------|--------------------------|
+| Données activités sportives | Simulateur Monte Carlo (`generate_strava.py`) | Connexion directe API Strava |
+| Stockage Delta Lake | Local (`data/delta/`) via `delta-rs`, sans Spark | S3 / Azure Blob + Spark ou Databricks |
+| Qualité des données | SQL maison (`quality_check.py`, 9 règles) | Great Expectations ou SODA (voir §11) |
+| Orchestration | Kestra standalone (H2 embarqué, Docker local) | Kestra ou Airflow managé (cloud) |
+| Pont Docker ↔ Python | Flask HTTP (voir §7.3) | Scripts containerisés dans Docker |
+
+> L'architecture cible envisagée dans la note de cadrage — dont une vue schématique est disponible dans [documentation/Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png](documentation/Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png) — inclut certaines solutions (connexion Strava live, data lake cloud, moteur Spark) qui peuvent s'avérer **overkill** pour la phase POC. Le parti pris a été de livrer un pipeline fonctionnel de bout en bout, entièrement local, sans dépendances cloud ni licences tierces.
+
+La migration vers l'architecture cible ne devrait pas poser de difficultés majeures : la couche Delta Lake est conçue pour être transparente au changement de stockage (un seul paramètre `local → s3://` dans `src/config.py`), et les scripts Python sont indépendants du scheduler.
+
 ---
 
-## 2. Architecture technique
+## 2. Architecture technique du POC
+
+> **Architecture volontairement restreinte pour la phase POC.** L'ensemble de la stack tourne localement (Docker Desktop + conda), sans service cloud ni composant externe payant. Les solutions définitives (API Strava live, data lake cloud, bases managées) ont été mises de côté pour rester maniables ; la structure Medallion Bronze / Silver / Gold garantit que la migration ne nécessitera pas de réécriture majeure des traitements.
 
 ```
 Donne_es_RH.xlsx          ┐
@@ -98,6 +134,23 @@ strava_activities (simulé) ┘        │
 | **Slack Incoming Webhooks** | Notifications temps réel dans un channel | R4 |
 | **openpyxl** | Export Excel multi-onglets pour Power BI | R5 |
 | **Power BI Desktop** | Rapport 5 pages, DAX What-If, connexion PostgreSQL/CSV | R5 |
+
+### Pourquoi PostgreSQL plutôt qu'une autre base ?
+
+Les données RH sont intrinsèquement relationnelles (salariés, activités, éligibilité, paramètres versionnés) et les 9 règles de contrôle qualité s'écrivent naturellement en SQL. PostgreSQL s'est imposé face aux alternatives :
+
+| Critère | PostgreSQL | Alternatives écartées |
+|---------|------------|----------------------|
+| **Accès concurrent** | Multi-client natif — Flask + Kestra + pgAdmin écrivent simultanément | SQLite : un seul écrivain, verrou en écriture |
+| **Python** | psycopg2 + SQLAlchemy matures, zéro friction avec pandas | — |
+| **Power BI** | Driver ODBC officiel (psqlODBC) | — |
+| **Docker** | Image officielle, comportement production-identique | — |
+| **SQL analytique** | Fenêtrage, CTE, agrégations avancées utilisées dans les ETL et les contrôles qualité | MySQL : moins riche analytiquement |
+| **Données structurées** | Schéma strict, jointures, clés étrangères — adapté aux données RH normalisées | MongoDB : document store inadapté ici |
+| **Serveur persistant** | Connexions longue durée, écritures répétées par plusieurs process | DuckDB : excellent en lecture analytique, pas conçu pour l'accès concurrent multi-process |
+| **Coût / complexité** | Docker local, gratuit, zéro dépendance externe | BigQuery, Snowflake, RDS : overkill pour un POC local |
+
+En production, PostgreSQL peut rester en place (instance managée RDS ou Cloud SQL) ou être remplacé par un entrepôt cloud — la couche Delta Lake isole cette décision du reste du pipeline.
 
 ---
 
