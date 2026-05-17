@@ -60,7 +60,7 @@ Le POC couvre l'ensemble du périmètre défini dans la note de cadrage (infrast
 | Orchestration | Kestra standalone (H2 embarqué, Docker local) | Kestra ou Airflow managé (cloud) |
 | Pont Docker ↔ Python | Flask HTTP (voir §7.3) | Scripts containerisés dans Docker |
 
-> L'architecture cible envisagée dans la note de cadrage — dont une vue schématique est disponible dans [documentation/Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png](documentation/Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png) — inclut certaines solutions (connexion Strava live, data lake cloud, moteur Spark) qui peuvent s'avérer **overkill** pour la phase POC. Le parti pris a été de livrer un pipeline fonctionnel de bout en bout, entièrement local, sans dépendances cloud ni licences tierces.
+> L'architecture cible envisagée dans la note de cadrage — dont une vue schématique est disponible dans [documentation/Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png](documentation/Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png) — inclut certaines solutions (connexion Strava live, data lake cloud, moteur Spark) qui peuvent s'avérer **overkill** pour la phase POC (et même ensuite). Le parti pris a été de livrer un pipeline fonctionnel de bout en bout, en gran de partie local, sans dépendances cloud ni licences tierces.
 
 La migration vers l'architecture cible ne devrait pas poser de difficultés majeures : la couche Delta Lake est conçue pour être transparente au changement de stockage (un seul paramètre `local → s3://` dans `src/config.py`), et les scripts Python sont indépendants du scheduler.
 
@@ -101,7 +101,7 @@ strava_activities (simulé) ┘        │
    data/delta/gold/avantages/
          │
          ▼
-   [Flask Entry — src/flask_entry.py]          ◄── Round 4
+   [Flask Entry — src/flask_entry.py]          
    Interface web saisie manuelle
    API REST exposée à Kestra
          │                 │
@@ -111,7 +111,7 @@ strava_activities (simulé) ┘        │
    temps réel          schedules automatiques
          │
          ▼
-   [Export Power BI — src/export_power_bi.py] ◄── Round 5
+   [Export Power BI — src/export_power_bi.py] ◄── 
    7 datasets CSV ou Excel
    5 pages rapport · DAX What-If · recalcul scénario DRH
 ```
@@ -156,7 +156,109 @@ En production, PostgreSQL peut rester en place (instance managée RDS ou Cloud S
 
 ## 3. Environnement et démarrage
 
-### 3.1 Environnement Python
+### 3.1 Cloner le dépôt et structure du projet
+
+```bash
+git clone https://github.com/PascalDuval/AvantageSport.git
+cd AvantageSport
+```
+
+#### Structure récupérée après le clone
+
+```
+AvantageSport/
+├── .env.example                        ← template à copier en .env (secrets locaux)
+├── .gitignore
+├── README.md
+├── pytest.ini
+├── requirements.txt
+│
+├── data/
+│   ├── raw/                            ← vide — copier les XLSX ici avant de lancer le pipeline
+│   └── delta/                          ← vide — généré automatiquement par le pipeline
+│
+├── docker/
+│   ├── docker-compose.postgres.yml     ← PostgreSQL 16 + pgAdmin 4
+│   └── docker-compose.kestra.yml       ← Kestra standalone (orchestrateur)
+│
+├── documentation/
+│   ├── Donne_es_RH.xlsx                ← données RH source (161 salariés)
+│   ├── Donne_es_Sportive.xlsx          ← déclarations sportives source (95 salariés)
+│   ├── Note+de+cadrage+_+POC+Avantages+Sportif.pdf
+│   ├── Note+de+cadrage+_+POC+Avantages+Sportif_page2_image.png
+│   └── mailjuliette.txt
+│
+├── kestra/
+│   └── flows/
+│       ├── 00_pipeline_complet.yml     ← orchestre les 5 flows dans l'ordre
+│       ├── 01_ingest_xlsx.yml
+│       ├── 02_generate_strava.yml
+│       ├── 03_etl_silver_gold.yml      ← schedule quotidien 6h
+│       ├── 04_quality_check.yml
+│       └── 05_notify_slack.yml         ← polling Slack toutes les 5 min
+│
+├── logs/                               ← vide — généré au runtime
+├── reports/                            ← vide — généré par export_power_bi.py
+│
+├── scripts/
+│   ├── run_round1.py                   ← infra + simulation Strava-like
+│   ├── run_round2.py                   ← ingestion XLSX + ETL Silver + Google Maps
+│   ├── run_round3.py                   ← quality check + ETL Gold
+│   ├── run_round4.py                   ← vérification setup Kestra + Flask + Slack
+│   └── run_round5.py                   ← export Power BI + bilan final
+│
+├── sql/
+│   ├── init.sql                        ← création des 9 tables PostgreSQL
+│   └── power_bi_queries.sql            ← requêtes source des 5 pages Power BI
+│
+├── src/
+│   ├── config.py                       ← constantes, paramètres sports, chemins Delta Lake
+│   ├── database.py                     ← pool de connexions PostgreSQL
+│   ├── ingest_xlsx.py                  ← chargement XLSX → raw_rh / raw_sport
+│   ├── generate_strava.py              ← simulateur Monte Carlo activités sportives
+│   ├── bronze_writer.py                ← écriture Delta Lake Bronze
+│   ├── etl_silver.py                   ← normalisation + distances + éligibilité
+│   ├── etl_gold.py                     ← calcul primes et journées bien-être
+│   ├── quality_check.py                ← 9 règles SQL de contrôle qualité
+│   ├── gmaps_client.py                 ← Google Maps API + cache PostgreSQL
+│   ├── flask_entry.py                  ← pont HTTP Kestra ↔ Python + UI saisie manuelle
+│   ├── slack_notifier.py               ← notifications Slack (Block Kit)
+│   └── export_power_bi.py              ← export 7 datasets CSV / Excel
+│
+└── tests/
+    ├── test_round1.py                  ← 11 tests
+    ├── test_round2.py                  ← 49 tests
+    ├── test_round3.py                  ← 32 tests
+    ├── test_round4.py                  ← 31 tests
+    └── test_round5.py                  ← ~35 tests
+
+```
+
+#### Premières vérifications après le clone
+
+```bash
+# 1. Vérifier que Python et les dépendances sont disponibles
+pip install -r requirements.txt
+
+# 2. Créer le fichier de secrets locaux
+cp .env.example .env          # Linux/Mac
+copy .env.example .env        # Windows
+
+# 3. Copier les fichiers de données source dans data/raw/
+#    (les XLSX sont disponibles dans documentation/ à titre de référence)
+cp documentation/Donne_es_RH.xlsx       data/raw/
+cp documentation/Donne_es_Sportive.xlsx data/raw/
+
+# 4. Vérifier la structure des dossiers attendus
+ls data/raw/    # doit contenir les deux XLSX
+ls data/delta/  # vide pour l'instant — sera peuplé par le pipeline
+ls logs/        # vide — généré au runtime
+ls reports/     # vide — généré par export_power_bi.py
+```
+
+> Remplir ensuite `.env` avec vos valeurs (voir §3.3) avant de démarrer Docker.
+
+### 3.2 Environnement Python
 
 ```powershell
 # Activer l'environnement conda du projet
@@ -169,7 +271,7 @@ cd C:\Users\karap\OpenClassRooms\projet12
 > L'environnement `datascience2` contient tous les packages nécessaires aux quatre rounds
 > (psycopg2, pandas, deltalake, duckdb, googlemaps, flask, requests, pytest…).
 
-### 3.2 Variables d'environnement
+### 3.3 Variables d'environnement
 
 Le fichier `.env` à la racine contient les secrets locaux (non versionné) :
 
@@ -202,7 +304,7 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 
 > `.env.example` est versionné comme template. `.env` ne l'est jamais (données sensibles).
 
-### 3.3 Démarrer Docker
+### 3.4 Démarrer Docker
 
 ```powershell
 # Démarrer PostgreSQL + pgAdmin (Round 1)
@@ -221,7 +323,7 @@ docker ps
 > **Note Kestra** : le `docker-compose.kestra.yml` utilise `server local` (base H2 embarquée,
 > parfait pour le POC) et rejoint `poc_network` pour partager le réseau avec PostgreSQL.
 
-### 3.4 Se connecter à pgAdmin
+### 3.5 Se connecter à pgAdmin
 
 Ouvrir **http://localhost:5050**
 
