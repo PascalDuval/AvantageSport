@@ -304,20 +304,37 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 
 > `.env.example` est versionné comme template. `.env` ne l'est jamais (données sensibles).
 
-### 3.4 Démarrer Docker
+### 3.4 Démarrer Docker — opération unique par session de travail
+
+Le projet repose sur **deux services Docker** distincts, chacun défini dans son propre fichier `docker-compose` :
+
+| Service | Fichier | Rôle | Nécessaire depuis |
+|---------|---------|------|-------------------|
+| **PostgreSQL 16 + pgAdmin 4** | `docker/docker-compose.postgres.yml` | Base de données principale + interface web | Round 1 |
+| **Kestra** | `docker/docker-compose.kestra.yml` | Orchestrateur de workflows (6 flows, schedules, UI) | Round 4 |
+
+> **À lancer une seule fois par session de travail** — pas à réinstaller. Docker garde les containers actifs en arrière-plan (flag `-d` = mode détaché). Si la machine a redémarré, un simple `up -d` suffit à les relancer ; les données PostgreSQL sont persistées dans le volume Docker.
 
 ```powershell
-# Démarrer PostgreSQL + pgAdmin (Round 1)
+# Étape 1 — PostgreSQL + pgAdmin (indispensable dès Round 1)
 docker compose -f docker/docker-compose.postgres.yml up -d
 
-# Démarrer Kestra (Round 4)
+# Étape 2 — Kestra (nécessaire à partir de Round 4)
 docker compose -f docker/docker-compose.kestra.yml up -d
 
-# Vérifier les trois containers
+# Vérifier que les trois containers sont bien Up
 docker ps
 # poc_postgres   Up   0.0.0.0:5432->5432/tcp
 # poc_pgadmin    Up   0.0.0.0:5050->80/tcp
 # kestra         Up   0.0.0.0:8080->8080/tcp
+```
+
+> **Prérequis pour tous les tests** : les suites `pytest` des rounds 1 à 5 s'appuient sur une connexion PostgreSQL active. Le container `poc_postgres` doit être `Up` avant de lancer n'importe quel `pytest`. Les tests du Round 4 nécessitent en plus que Kestra soit démarré.
+
+```powershell
+# Arrêter les services en fin de session (optionnel)
+docker compose -f docker/docker-compose.postgres.yml down
+docker compose -f docker/docker-compose.kestra.yml down
 ```
 
 > **Note Kestra** : le `docker-compose.kestra.yml` utilise `server local` (base H2 embarquée,
@@ -449,15 +466,19 @@ SELECT flow_name, statut, nb_lignes, duree_ms FROM pipeline_runs;
 
 ### 4.7 Tests Round 1
 
+> **Prérequis** : le container `poc_postgres` doit être actif (`docker ps` → `Up`). Voir §3.4.
+
+La suite vérifie que l'infrastructure est en place, que le générateur Monte Carlo produit des données cohérentes, et que la couche Bronze Delta Lake est lisible — avant de passer au Round 2.
+
 ```powershell
 pytest tests/test_round1.py -v
 # Résultat attendu : 11/11 PASSED
 ```
 
-- `TestPostgreSQL` (4 tests) : connexion, 9 tables présentes, `config` peuplée, `taux_prime = 0.05`
-- `TestGenerator` (5 tests) : génération Running (distance + durée cohérentes), Escalade (distance NULL), typo Runing acceptée, plage 0-60 activités/an respectée, toutes les dates en 2025
-- `TestInsertion` (2 tests) : dry-run retourne 0, insertion réelle + vérification + nettoyage
-- `TestBronze` (3 tests) : dossier Bronze existe + `_delta_log` présent, lisible par DuckDB, schéma correct
+- `TestPostgreSQL` (4 tests) : connexion active, 9 tables présentes, table `config` peuplée, `taux_prime = 0.05`
+- `TestGenerator` (5 tests) : distances et durées cohérentes par sport, `distance_m = NULL` pour sports sans déplacement, typo `Runing` acceptée en Bronze, dates bornées à 2025
+- `TestInsertion` (2 tests) : dry-run sans insertion, insertion réelle puis nettoyage
+- `TestBronze` (3 tests) : dossier `data/delta/bronze/strava/` créé, `_delta_log/` présent, lisible par DuckDB avec le bon schéma
 
 ---
 
