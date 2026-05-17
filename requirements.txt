@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────
+# POC Avantages Sportifs — Requirements
+# Install : pip install -r requirements.txt
+# Env     : conda activate datascience2
+# ─────────────────────────────────────────────────────────────────
+
+# ── Base de données ──────────────────────────────────────────────
+psycopg2-binary==2.9.9          # Driver PostgreSQL (binary = pas de compilation)
+SQLAlchemy==2.0.35              # ORM + pandas .to_sql() / read_sql()
+
+# ── Data manipulation ────────────────────────────────────────────
+pandas==2.2.3
+openpyxl==3.1.5                 # Lecture des fichiers .xlsx
+
+# ── Delta Lake (sans Spark, sans JVM) ────────────────────────────
+deltalake==0.21.0               # delta-rs Python binding
+duckdb==1.1.2                   # Lecture Delta Lake + SQL analytique
+
+# ── Configuration ────────────────────────────────────────────────
+python-dotenv==1.0.1            # Chargement du fichier .env
+
+# ── Tests ────────────────────────────────────────────────────────
+pytest==8.3.3
+pytest-cov==5.0.0               # Couverture de code
+
+# ── Qualité de code ──────────────────────────────────────────────
+black==24.10.0                  # Formatage automatique
+ruff==0.7.1                     # Linter rapide
+
+# ── Round 2+ (Google Maps API) ───────────────────────────────────
+googlemaps==4.10.0            # Décommenter en Round 2
+
+# ── Round 3+ (Great Expectations) ───────────────────────────────
+# great-expectations==0.18.12   # Décommenter en Round 3
+
+# ── Round 4+ (Kestra + Slack) ────────────────────────────────────
+# requests==2.32.3              # Webhook Slack (souvent déjà installé)
+# flask==3.0.3                  # Mini-UI saisie manuelle (Round 4)

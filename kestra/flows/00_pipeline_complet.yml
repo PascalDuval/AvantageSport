@@ -1,0 +1,94 @@
+# =============================================================
+# Flow Kestra 00 — Pipeline Complet (correction Round 5)
+# Namespace : poc.avantages_sportifs
+# Déclenche : manuellement (démo / restitution)
+#
+# Corrections Kestra 1.3.x appliquées (cf README §7.12) :
+#   - io.kestra.plugin.flow.Subflow → io.kestra.plugin.core.flow.Subflow
+#   - type: INTEGER → type: INT
+#
+# Orchestre les 5 flows dans l'ordre logique :
+#   01 ingest → 02 generate → 03 etl → 04 quality → 05 notify
+# =============================================================
+id: pipeline_complet
+namespace: poc.avantages_sportifs
+
+labels:
+  round: "4-5"
+  type: orchestration
+
+description: |
+  Flow maître : orchestre les 5 flows du pipeline dans l'ordre.
+  Utilisé pour la démo et la restitution.
+  En cas d'échec du Quality Check (flow 04), le pipeline continue
+  sans être bloqué (transmitFailed = false) sauf si fail_fast=true.
+
+inputs:
+  - id: skip_gmaps
+    type: BOOLEAN
+    defaults: false
+  - id: fail_fast_qc
+    type: BOOLEAN
+    defaults: false
+    description: "Bloquer si une règle BLOQUANTE du QC échoue"
+
+tasks:
+
+  - id: health_check
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/health"
+    method: GET
+    description: "Vérifier que Flask Entry est accessible avant de démarrer"
+
+  - id: step_01_ingest
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: poc.avantages_sportifs
+    flowId: ingest_xlsx
+    wait: true
+    transmitFailed: true
+    description: "Étape 1 : chargement XLSX → raw_rh + raw_sport"
+
+  - id: step_02_generate
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: poc.avantages_sportifs
+    flowId: generate_strava
+    wait: true
+    transmitFailed: true
+    description: "Étape 2 : re-simulation Monte Carlo (optionnel)"
+
+  - id: step_03_etl
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: poc.avantages_sportifs
+    flowId: etl_silver_gold
+    wait: true
+    transmitFailed: true
+    description: "Étape 3 : ETL Silver + Gold (employees + avantages_calcules)"
+
+  - id: step_04_quality
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: poc.avantages_sportifs
+    flowId: quality_check
+    wait: true
+    transmitFailed: false
+    description: "Étape 4 : 9 règles qualité (non bloquant par défaut)"
+
+  - id: step_05_notify
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: poc.avantages_sportifs
+    flowId: notify_slack
+    wait: true
+    transmitFailed: false
+    description: "Étape 5 : notifications Slack (activités manuelles récentes)"
+
+  - id: log_completion
+    type: io.kestra.plugin.core.log.Log
+    message: "Pipeline complet terminé avec succès — voir http://localhost:5001/api/stats"
+
+errors:
+  - id: on_pipeline_failure
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/api/notify"
+    method: POST
+    contentType: application/json
+    body: '{"dry_run": false, "since_minutes": 5}'
+    description: "Tente quand même d'envoyer les notifications Slack en cas d'erreur amont"

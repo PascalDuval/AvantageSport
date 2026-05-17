@@ -1,0 +1,55 @@
+# =============================================================
+# Docker Compose — Kestra (complément Round 4, livré en Round 5)
+# Référencé dans README §3.3 et §7.8
+#
+# Mode    : server local (H2 embarqué — parfait pour le POC)
+# Réseau  : rejoint poc_network pour partager le réseau PostgreSQL
+#
+# Démarrage : docker compose -f docker/docker-compose.kestra.yml up -d
+# UI        : http://localhost:8080
+# Arrêt     : docker compose -f docker/docker-compose.kestra.yml down
+# Reset     : docker compose -f docker/docker-compose.kestra.yml down -v
+# =============================================================
+version: "3.8"
+
+services:
+
+  kestra:
+    image: kestra/kestra:latest
+    container_name: poc_kestra
+    restart: unless-stopped
+    command: server local
+    ports:
+      - "8080:8080"   # UI + API REST Kestra
+      - "8081:8081"   # Port interne worker (optionnel)
+    volumes:
+      # Stockage interne Kestra (exécutions, logs, artefacts)
+      - kestra_storage:/app/storage
+    environment:
+      KESTRA_CONFIGURATION: |
+        kestra:
+          server:
+            basic-auth:
+              enabled: false
+          storage:
+            type: local
+            local:
+              base-path: /app/storage
+    networks:
+      - poc_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  kestra_storage:
+
+networks:
+  poc_network:
+    # Réseau externe créé par docker-compose.postgres.yml
+    # Commande de création si besoin : docker network create poc_network
+    external: true
+    name: poc_network

@@ -1,0 +1,48 @@
+# ═══════════════════════════════════════════════════════════════
+# Flow Kestra 02 — Générateur Strava-like
+# Namespace : poc.avantages_sportifs
+# Déclenche : manuellement (régénération si besoin)
+#
+# Action : appelle POST /api/generate
+#          → src/generate_strava.py → strava_activities
+# ═══════════════════════════════════════════════════════════════
+id: generate_strava
+namespace: poc.avantages_sportifs
+
+labels:
+  round: "4"
+
+description: |
+  Lance la simulation Monte Carlo Strava-like.
+  TRUNCATE strava_activities puis INSERT des activités 2025.
+  Ce flow est normalement lancé une fois (ou avec --seed pour reproductibilité).
+
+inputs:
+  - id: dry_run
+    type: BOOLEAN
+    defaults: false
+
+tasks:
+
+  - id: health_check
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/health"
+    method: GET
+
+  - id: run_generate
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/api/generate"
+    method: POST
+    contentType: application/json
+    body: '{"dry_run": false}'
+    description: "Lance src/generate_strava.py (Monte Carlo, seed configurable)"
+
+  - id: log_result
+    type: io.kestra.plugin.core.log.Log
+    message: "Génération terminée. Réponse : {{ outputs.run_generate.body }}"
+
+errors:
+  - id: on_failure
+    type: io.kestra.plugin.core.log.Log
+    level: ERROR
+    message: "ECHEC generate_strava — Vérifiez que Flask est démarré sur :5001"

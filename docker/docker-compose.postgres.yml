@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────
+# ROUND 1 — PostgreSQL + pgAdmin
+# Démarrage : docker compose -f docker/docker-compose.postgres.yml up -d
+# Arrêt     : docker compose -f docker/docker-compose.postgres.yml down
+# Reset BDD : docker compose -f docker/docker-compose.postgres.yml down -v
+# ─────────────────────────────────────────────────────────────────
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: poc_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-poc_sport}
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin123}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../sql/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-poc_sport}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - poc_network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: poc_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@poc.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - poc_network
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  poc_network:
+    name: poc_network
+    driver: bridge

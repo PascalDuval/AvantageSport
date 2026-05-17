@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════════
+# Flow Kestra 01 — Ingestion XLSX
+# Namespace : poc.avantages_sportifs
+# Déclenche : manuellement ou depuis un flow parent
+#
+# Action : appelle POST /api/ingest sur le Flask Entry local
+#          → src/ingest_xlsx.py → raw_rh + raw_sport PostgreSQL
+# ═══════════════════════════════════════════════════════════════
+id: ingest_xlsx
+namespace: poc.avantages_sportifs
+
+labels:
+  round: "4"
+  equipe: poc-sport
+
+description: |
+  Charge les fichiers XLSX (Données RH et Sportives) dans les tables
+  brutes PostgreSQL raw_rh et raw_sport.
+  Prérequis : Flask Entry démarré (python src/flask_entry.py).
+
+inputs:
+  - id: dry_run
+    type: BOOLEAN
+    defaults: false
+    description: "Si true : affiche sans insérer en base"
+
+tasks:
+
+  - id: health_check
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/health"
+    method: GET
+    description: "Vérifie que Flask Entry est disponible"
+
+  - id: run_ingest
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/api/ingest"
+    method: POST
+    contentType: application/json
+    body: '{"dry_run": false}'
+    description: "Lance src/ingest_xlsx.py"
+
+  - id: log_result
+    type: io.kestra.plugin.core.log.Log
+    message: "Ingestion terminée. Réponse API : {{ outputs.run_ingest.body }}"
+
+errors:
+  - id: on_failure
+    type: io.kestra.plugin.core.log.Log
+    level: ERROR
+    message: "ECHEC ingest_xlsx — Vérifiez que Flask est démarré sur :5001"

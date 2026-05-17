@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════
+# Flow Kestra 05 — Notifications Slack
+# Namespace : poc.avantages_sportifs
+# Schedule  : */5 * * * *  (toutes les 5 minutes)
+# Déclenche : automatiquement ou après une saisie Flask
+#
+# Action : poll les nouvelles activités manuelles → webhook Slack
+#          Source filtrée : strava_activities.source = 'manual'
+# ═══════════════════════════════════════════════════════════════
+id: notify_slack
+namespace: poc.avantages_sportifs
+
+labels:
+  round: "4"
+
+description: |
+  Polling de strava_activities pour les activités 'manual' récentes.
+  Envoie un message Slack riche pour chaque nouvelle activité.
+  Typiquement déclenché après une saisie dans Flask (demo live).
+
+triggers:
+  - id: polling_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "*/5 * * * *"
+    description: "Polling toutes les 5 minutes"
+
+inputs:
+  - id: since_minutes
+    type: INT
+    defaults: 6
+    description: "Fenêtre de polling en minutes (légèrement > fréquence schedule)"
+  - id: dry_run
+    type: BOOLEAN
+    defaults: false
+
+tasks:
+
+  - id: health_check
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/health"
+    method: GET
+
+  - id: run_notify
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/api/notify"
+    method: POST
+    contentType: application/json
+    body: '{"since_minutes": 6, "dry_run": false}'
+    description: "Poll strava_activities.source='manual' → webhook Slack"
+
+  - id: log_result
+    type: io.kestra.plugin.core.log.Log
+    message: "Slack notifier terminé : {{ outputs.run_notify.body }}"
+
+errors:
+  - id: on_failure
+    type: io.kestra.plugin.core.log.Log
+    level: WARNING
+    message: "Slack notifier KO — vérifier SLACK_WEBHOOK_URL dans .env"

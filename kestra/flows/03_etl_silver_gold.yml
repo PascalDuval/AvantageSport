@@ -1,0 +1,62 @@
+# ═══════════════════════════════════════════════════════════════
+# Flow Kestra 03 — ETL Silver + Gold
+# Namespace : poc.avantages_sportifs
+# Schedule  : 0 6 * * *  (tous les jours à 6h)
+# Déclenche : automatiquement ou après ingest_xlsx
+#
+# Étapes :
+#   1. ETL Silver (src/etl_silver.py) → employees normalisés
+#   2. ETL Gold   (src/etl_gold.py)  → avantages_calcules
+#   3. Log dans pipeline_runs
+# ═══════════════════════════════════════════════════════════════
+id: etl_silver_gold
+namespace: poc.avantages_sportifs
+
+labels:
+  round: "4"
+
+description: |
+  Pipeline ETL complet :
+  raw_rh + raw_sport → employees (Silver) → avantages_calcules (Gold)
+  Lance les deux scripts séquentiellement via l'API Flask.
+
+triggers:
+  - id: daily_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 * * *"
+    description: "Recalcul quotidien à 6h du matin"
+
+inputs:
+  - id: dry_run
+    type: BOOLEAN
+    defaults: false
+  - id: skip_gmaps
+    type: BOOLEAN
+    defaults: false
+    description: "Ignorer le calcul de distances Google Maps"
+
+tasks:
+
+  - id: health_check
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/health"
+    method: GET
+
+  - id: run_etl
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://host.docker.internal:5001/api/etl"
+    method: POST
+    contentType: application/json
+    body: '{"dry_run": false, "skip_gmaps": false}'
+    description: "ETL Silver (normalisation + distances) + Gold (primes + BE)"
+    timeout: PT300S
+
+  - id: log_result
+    type: io.kestra.plugin.core.log.Log
+    message: "ETL terminé. Réponse : {{ outputs.run_etl.body }}"
+
+errors:
+  - id: on_failure
+    type: io.kestra.plugin.core.log.Log
+    level: ERROR
+    message: "ECHEC etl_silver_gold — Voir logs Flask et pipeline_runs"

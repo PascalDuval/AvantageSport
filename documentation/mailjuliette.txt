@@ -1,0 +1,74 @@
+De : Juliette
+
+À :  Moi 
+
+Objet : Avantages sportifs
+
+Bonjour !
+
+ 
+
+J’espère que tu vas bien ! Comme discuté tout à l’heure, après avoir mis en place un système de récompense pour les employés qui prennent des actions concrètes pour l'environnement, nous souhaitons maintenant récompenser les sportifs et encourager la pratique du sport par tous. Je souhaite proposer à l’ensemble des collaborateurs des avantages s'ils ont une pratique du sport régulière. Je t’ai ajouté les fichiers en pièces jointes. 
+
+Pour cela, je souhaite qu’on lance un POC de la solution avant de l’annoncer.
+
+ 
+
+Ce POC vise à : 
+
+Tester la faisabilité de la solution
+
+Comprendre quelles données nous allons recueillir chez les salariés
+
+Calculer l’impact financier pour l’entreprise de ces avantages supplémentaires. 
+
+ 
+
+Dans un premier temps, j’ai pensé a 2 avantages possibles : 
+
+Une prime : Chaque salarié venant au bureau en faisant du sport (vélo, trottinette, course à pied, marche, etc.) bénéficiera d’une prime de 5% sur son salaire annuel brut. 
+
+5 journées “bien-être” par an : Tous les salariés qui ont une activité physique soutenue à côté de leur travail peuvent prétendre à 5 jours de “bien-être” pour la pratique de leur sport et améliorer leur récupération. 
+
+ 
+
+Nous souhaitons que chaque activité physique crée automatiquement une publication dans le channel slack associé pour favoriser l’émulation entre les salariés.
+
+ 
+
+Pour les deux options ci-dessus, les salariés doivent remplir certaines conditions détaillées dans la note de cadrage également en pièce jointe. 
+
+ 
+
+Pour la partie technique, tu es libre d’utiliser les outils que tu préfères, l’essentiel c’est que l’ensemble du projet soit robuste, sécurisé et fonctionnel. 
+
+ 
+
+Concernant la restitution du projet, pourras-tu : 
+
+présenter à l’aide d’un support, l’ensemble de ta solution (architecture, pipeline des données, monitoring, etc.) en justifiant tes choix ? 
+
+réaliser une démonstration live de ta solution. 
+
+présenter un rapport PowerBI avec les principaux indicateurs. Pense à permettre de relancer l’historique des indicateurs si jamais une source est modifiée (nous ne sommes pas à l’abri d’une modification du taux ou des données entrantes).
+
+ 
+
+N’hésite pas à me tenir au courant de ton avancement ou à me poser des questions si tu bloques sur certains points. 
+
+ 
+
+Merci et bon courage !
+
+ 
+
+Juliette
+
+Co-Fondatrice – Sport Data Solution
+
+Ps : Comme d’habitude, si tu vois des choses pertinentes à ajouter tu es également libre de le faire.
+
+Données RH
+Données sportives
+
+Note de cadrage
