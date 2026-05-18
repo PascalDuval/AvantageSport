@@ -104,7 +104,7 @@ def check_all_rounds() -> dict[str, dict]:
         with conn.cursor() as cur:
 
             checks = [
-                ("R1 strava_activities",  "SELECT COUNT(*), COUNT(DISTINCT employee_id), COUNT(DISTINCT sport_type) FROM strava_activities WHERE source='strava'"),
+                ("R1 strava_activities",  "SELECT COUNT(*), COUNT(DISTINCT employee_id), COUNT(DISTINCT sport_type) FROM strava_activities WHERE source='generator'"),
                 ("R2 employees",          "SELECT COUNT(*), SUM(CASE WHEN eligible_prime THEN 1 ELSE 0 END), SUM(CASE WHEN distance_bureau_km IS NOT NULL THEN 1 ELSE 0 END) FROM employees"),
                 ("R2 gmaps_cache",        "SELECT COUNT(*), COUNT(DISTINCT mode_transport) FROM gmaps_cache WHERE mode_transport IN ('walking','bicycling')"),
                 ("R3 avantages_calcules", "SELECT COUNT(*), SUM(CASE WHEN eligible_prime THEN 1 ELSE 0 END), ROUND(SUM(montant_prime)::NUMERIC,2) FROM avantages_calcules"),
