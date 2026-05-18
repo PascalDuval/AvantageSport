@@ -1,4 +1,4 @@
-# =============================================================
+﻿# =============================================================
 # Flow Kestra 00 — Pipeline Complet (correction Round 5)
 # Namespace : poc.avantages_sportifs
 # Déclenche : manuellement (démo / restitution)
@@ -26,10 +26,10 @@ description: |
 inputs:
   - id: skip_gmaps
     type: BOOLEAN
-    default: false
+    defaults: false
   - id: fail_fast_qc
     type: BOOLEAN
-    default: false
+    defaults: false
     description: "Bloquer si une règle BLOQUANTE du QC échoue"
 
 tasks:

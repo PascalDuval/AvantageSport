@@ -20,7 +20,7 @@ description: |
 inputs:
   - id: dry_run
     type: BOOLEAN
-    default: false
+    defaults: false
 
 tasks:
 

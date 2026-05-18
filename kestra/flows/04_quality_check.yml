@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 04 — Contrôles Qualité (SODA Core)
 # Namespace : poc.avantages_sportifs
 # Déclenche : après etl_silver_gold, ou manuellement
@@ -30,11 +30,11 @@ description: |
 inputs:
   - id: suite
     type: STRING
-    default: all
+    defaults: all
     description: "'all', 'employees', 'strava', ou 'gold'"
   - id: fail_fast
     type: BOOLEAN
-    default: false
+    defaults: false
     description: "Stopper dès le premier BLOQUANT détecté"
 
 tasks:

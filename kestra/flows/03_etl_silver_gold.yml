@@ -29,10 +29,10 @@ triggers:
 inputs:
   - id: dry_run
     type: BOOLEAN
-    default: false
+    defaults: false
   - id: skip_gmaps
     type: BOOLEAN
-    default: false
+    defaults: false
     description: "Ignorer le calcul de distances Google Maps"
 
 tasks:

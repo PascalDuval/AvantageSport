@@ -21,7 +21,7 @@ description: |
 inputs:
   - id: dry_run
     type: BOOLEAN
-    default: false
+    defaults: false
     description: "Si true : affiche sans insérer en base"
 
 tasks:

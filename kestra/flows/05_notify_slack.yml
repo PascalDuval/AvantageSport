@@ -27,11 +27,11 @@ triggers:
 inputs:
   - id: since_minutes
     type: INT
-    default: 6
+    defaults: 6
     description: "Fenêtre de polling en minutes (légèrement > fréquence schedule)"
   - id: dry_run
     type: BOOLEAN
-    default: false
+    defaults: false
 
 tasks:
 
