@@ -53,7 +53,7 @@ tasks:
     retry:
       type: constant
       interval: PT10S
-      maxAttempt: 3
+      maxAttempts: 3
 
   - id: run_etl
     type: io.kestra.plugin.core.http.Request
@@ -67,8 +67,7 @@ tasks:
       type: exponential
       interval: PT60S
       maxInterval: PT180S
-      maxAttempt: 2
-      multiplier: 2.0
+      maxAttempts: 2
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log

@@ -51,7 +51,7 @@ tasks:
     retry:
       type: constant
       interval: PT10S
-      maxAttempt: 3
+      maxAttempts: 3
 
   - id: step_01_ingest
     type: io.kestra.plugin.core.flow.Subflow

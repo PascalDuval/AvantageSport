@@ -50,7 +50,7 @@ tasks:
     retry:
       type: constant
       interval: PT15S
-      maxAttempt: 2
+      maxAttempts: 2
 
   - id: run_notify
     type: io.kestra.plugin.core.http.Request
@@ -62,7 +62,7 @@ tasks:
     retry:
       type: constant
       interval: PT30S
-      maxAttempt: 2
+      maxAttempts: 2
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log
