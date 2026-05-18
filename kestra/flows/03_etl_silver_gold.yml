@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 03 — ETL Silver + Gold
 # Namespace : poc.avantages_sportifs
 # Schedule  : 0 6 * * *  (tous les jours à 6h)
@@ -29,10 +29,10 @@ triggers:
 inputs:
   - id: dry_run
     type: BOOLEAN
-    defaults: false
+    default: false
   - id: skip_gmaps
     type: BOOLEAN
-    defaults: false
+    default: false
     description: "Ignorer le calcul de distances Google Maps"
 
 tasks:

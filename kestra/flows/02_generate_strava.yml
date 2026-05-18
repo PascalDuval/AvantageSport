@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 02 — Générateur Strava-like
 # Namespace : poc.avantages_sportifs
 # Déclenche : manuellement (régénération si besoin)
@@ -20,7 +20,7 @@ description: |
 inputs:
   - id: dry_run
     type: BOOLEAN
-    defaults: false
+    default: false
 
 tasks:
 

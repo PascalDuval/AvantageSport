@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 05 — Notifications Slack
 # Namespace : poc.avantages_sportifs
 # Schedule  : */5 * * * *  (toutes les 5 minutes)
@@ -27,11 +27,11 @@ triggers:
 inputs:
   - id: since_minutes
     type: INT
-    defaults: 6
+    default: 6
     description: "Fenêtre de polling en minutes (légèrement > fréquence schedule)"
   - id: dry_run
     type: BOOLEAN
-    defaults: false
+    default: false
 
 tasks:
 

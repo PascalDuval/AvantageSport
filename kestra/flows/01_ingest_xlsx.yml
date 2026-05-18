@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 01 — Ingestion XLSX
 # Namespace : poc.avantages_sportifs
 # Déclenche : manuellement ou depuis un flow parent
@@ -21,7 +21,7 @@ description: |
 inputs:
   - id: dry_run
     type: BOOLEAN
-    defaults: false
+    default: false
     description: "Si true : affiche sans insérer en base"
 
 tasks:

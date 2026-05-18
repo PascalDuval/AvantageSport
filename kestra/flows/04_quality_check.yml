@@ -30,11 +30,11 @@ description: |
 inputs:
   - id: suite
     type: STRING
-    defaults: all
+    default: all
     description: "'all', 'employees', 'strava', ou 'gold'"
   - id: fail_fast
     type: BOOLEAN
-    defaults: false
+    default: false
     description: "Stopper dès le premier BLOQUANT détecté"
 
 tasks:
