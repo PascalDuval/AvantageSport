@@ -3,16 +3,20 @@ Script d'exécution complet — Round 3
 
 Orchestre dans l'ordre :
   1. Vérification des pré-requis (R1 + R2 validés)
-  2. Contrôles qualité Silver + Bronze (quality_check.py)
+  2. Contrôles qualité (deux moteurs disponibles) :
+       - SODA Core (défaut recommandé) : 11 règles SodaCL déclaratives
+         → soda/checks/*.yml → data_quality_results + rapport HTML
+       - Quality Check SQL maison (--no-soda) : 9 règles Python+SQL (référence)
   3. ETL Gold : calcul primes + journées BE (etl_gold.py)
   4. Vérification DuckDB Gold
   5. Rapport final
 
 Usage:
-    python scripts/run_round3.py
-    python scripts/run_round3.py --dry-run
-    python scripts/run_round3.py --skip-qc       # sauter les contrôles qualité
-    python scripts/run_round3.py --fail-fast      # stoppe si QC bloquant
+    python scripts/run_round3.py                          # SODA + ETL Gold (défaut)
+    python scripts/run_round3.py --no-soda                # Quality check SQL maison
+    python scripts/run_round3.py --dry-run                # calcul sans écriture base
+    python scripts/run_round3.py --skip-qc                # sauter les contrôles qualité
+    python scripts/run_round3.py --fail-fast              # stoppe si QC bloquant
     python scripts/run_round3.py --params-version v2.0_taux7pct
 """
 import argparse
@@ -26,6 +30,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from database import ping, get_connection
 from etl_gold import main as etl_gold
 from quality_check import main as quality_check
+try:
+    from soda_runner import main as soda_check
+    SODA_AVAILABLE = True
+except ImportError:
+    SODA_AVAILABLE = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,24 +172,28 @@ def print_final_report() -> None:
 
     print(f"\n{SEP}")
     print("  ✅  ROUND 3 TERMINÉ")
-    print(f"     pgAdmin        : http://localhost:5050")
-    print(f"     Rapport HTML   : reports/quality_report.html")
-    print(f"     Delta Lake Gold: data/delta/gold/avantages/")
+    print(f"     pgAdmin            : http://localhost:5050")
+    print(f"     Rapport SODA HTML  : reports/soda_quality_report.html")
+    print(f"     Delta Lake Gold    : data/delta/gold/avantages/")
+    print(f"     → Données prêtes pour Tableau (connexion PostgreSQL live ou export Hyper)")
     print(SEP)
     print()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Round 3 complet")
+    parser = argparse.ArgumentParser(description="Run Round 3 complet — Quality Check SODA + ETL Gold")
     parser.add_argument("--dry-run", action="store_true",
                         help="Calcule sans écrire en base")
     parser.add_argument("--skip-qc", action="store_true",
                         help="Sauter les contrôles qualité")
+    parser.add_argument("--no-soda", action="store_true",
+                        help="Utiliser quality_check.py SQL maison au lieu de SODA Core")
     parser.add_argument("--fail-fast", action="store_true",
                         help="Stoppe si un contrôle BLOQUANT échoue")
     parser.add_argument("--params-version", type=str, default=None,
                         help="Surcharge la version des paramètres")
     args = parser.parse_args()
+    use_soda = not args.no_soda and SODA_AVAILABLE
 
     start = datetime.now()
     print(f"\n{'#'*65}")
@@ -193,12 +206,20 @@ def main() -> None:
         print("❌ Pré-requis non satisfaits.")
         sys.exit(1)
 
-    # Étape 1 : Quality Check
+    # Étape 1 : Quality Check (SODA Core par défaut, SQL maison en fallback)
     if not args.skip_qc:
-        print(f"\n{SEP}")
-        print("  ÉTAPE 1/2 — Contrôles Qualité (8 règles)")
-        print(SEP)
-        pipeline_ok = quality_check(suite="all", fail_fast=args.fail_fast)
+        if use_soda:
+            print(f"\n{SEP}")
+            print("  ÉTAPE 1/2 — Contrôles Qualité SODA Core (11 règles SodaCL)")
+            print(SEP)
+            pipeline_ok = soda_check(suite="all", fail_fast=args.fail_fast)
+            logger.info("Rapport HTML : reports/soda_quality_report.html")
+        else:
+            print(f"\n{SEP}")
+            engine_label = "Quality Check SQL maison (--no-soda)" if args.no_soda else "Quality Check SQL (soda-core-postgres non installé)"
+            print(f"  ÉTAPE 1/2 — Contrôles Qualité — {engine_label}")
+            print(SEP)
+            pipeline_ok = quality_check(suite="all", fail_fast=args.fail_fast)
 
         if not pipeline_ok and args.fail_fast:
             print("🔴 Pipeline stoppé : règles BLOQUANTES échouées.")

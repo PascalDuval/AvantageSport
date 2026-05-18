@@ -10,11 +10,11 @@ SQLAlchemy==2.0.35              # ORM + pandas .to_sql() / read_sql()
 
 # ── Data manipulation ────────────────────────────────────────────
 pandas==2.2.3
-openpyxl==3.1.5                 # Lecture des fichiers .xlsx
+openpyxl==3.1.5                 # Lecture/écriture fichiers .xlsx (R2 ingest + R5 export Excel)
 
 # ── Delta Lake (sans Spark, sans JVM) ────────────────────────────
-deltalake==0.21.0               # delta-rs Python binding
-duckdb==1.1.2                   # Lecture Delta Lake + SQL analytique
+deltalake==0.21.0               # delta-rs Python binding — Bronze/Silver/Gold
+duckdb==1.1.2                   # Lecture Delta Lake + SQL analytique sans JVM
 
 # ── Configuration ────────────────────────────────────────────────
 python-dotenv==1.0.1            # Chargement du fichier .env
@@ -27,12 +27,21 @@ pytest-cov==5.0.0               # Couverture de code
 black==24.10.0                  # Formatage automatique
 ruff==0.7.1                     # Linter rapide
 
-# ── Round 2+ (Google Maps API) ───────────────────────────────────
-googlemaps==4.10.0            # Décommenter en Round 2
+# ── Round 2 (Google Maps API) ─────────────────────────────────────
+googlemaps==4.10.0              # Calcul distances bureau ↔ domicile (marche + vélo)
 
-# ── Round 4+ (Kestra + Slack) ────────────────────────────────────
-# requests==2.32.3              # Webhook Slack (souvent déjà installé)
-# flask==3.0.3                  # Mini-UI saisie manuelle (Round 4)
+# ── Round 3 — SODA Core (qualité données déclarative) ────────────
+soda-core-postgres==3.3.3       # 11 règles SodaCL — quality checks Bronze/Silver/Gold
+                                 # Remplace le quality_check.py SQL maison (conservé en référence)
+                                 # Rapport HTML : reports/soda_quality_report.html
 
-# ── Round 6 — SODA Core (qualité données déclarative) ────────────
-soda-core-postgres==3.3.3       # Quality checks SodaCL + connecteur PostgreSQL
+# ── Round 4 (Kestra + Flask + Slack) ─────────────────────────────
+requests==2.32.3                # Webhook Slack + health checks Kestra + appels Flask
+flask==3.0.3                    # Mini-UI de saisie manuelle d'activités (port 5001)
+
+# ── Round 5 — Tableau (restitution visuelle) ──────────────────────
+tableauhyperapi                 # Génération d'extracts .hyper natifs Tableau (v2 dynamique)
+                                 # Permet d'injecter les données PostgreSQL directement dans
+                                 # Tableau Desktop sans driver ODBC ni manipulation manuelle.
+                                 # Optionnel : la connexion PostgreSQL live reste la voie
+                                 # recommandée pour la démo. Installer avec : pip install tableauhyperapi

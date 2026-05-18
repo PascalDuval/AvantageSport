@@ -22,8 +22,11 @@ labels:
   alerting: slack
 
 description: |
-  Flow maître : orchestre les 5 flows du pipeline dans l'ordre.
-  Utilisé pour la démo et la restitution.
+  Flow maître — démo et restitution.
+  Orchestre les 5 flows dans l'ordre :
+    01 ingest → 02 generate → 03 etl → 04 quality (SODA 11 règles) → 05 notify (#social)
+  Après exécution : F5 dans Tableau Desktop pour actualiser le dashboard live.
+  Alerting : erreurs critiques → Slack #alerting (envs.SLACK_ALERT_WEBHOOK_URL).
   En cas d'échec du Quality Check SODA (flow 04), le pipeline continue
   sans être bloqué (transmitFailed = false) sauf si fail_fast=true.
 
@@ -96,7 +99,7 @@ tasks:
   - id: log_completion
     type: io.kestra.plugin.core.log.Log
     level: INFO
-    message: "✅ pipeline_complet terminé | exec={{ execution.id }} | stats=http://localhost:5001/api/stats | rapport=reports/soda_quality_report.html"
+    message: "✅ pipeline_complet terminé | exec={{ execution.id }} | stats=http://localhost:5001/api/stats | soda=reports/soda_quality_report.html | tableau=localhost:5432/poc_sport → F5"
 
 errors:
 

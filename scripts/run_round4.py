@@ -108,15 +108,19 @@ def check_all() -> dict[str, bool]:
     else:
         print(f"❌  Manquants : {missing}")
 
-    # 6. Slack webhook
-    print("  [6/6] Slack Webhook URL...", end=" ")
-    webhook = os.getenv("SLACK_WEBHOOK_URL", "")
-    ok_slack = bool(webhook) and webhook.startswith("https://hooks.slack.com/")
-    results["slack"] = ok_slack
-    if ok_slack:
-        print("✅  (URL configurée)")
+    # 6. Slack webhooks (#social + #alerting)
+    print("  [6/6] Slack Webhooks...", end=" ")
+    webhook_social  = os.getenv("SLACK_WEBHOOK_URL", "")
+    webhook_alert   = os.getenv("SLACK_ALERT_WEBHOOK_URL", "")
+    ok_social  = bool(webhook_social)  and webhook_social.startswith("https://hooks.slack.com/")
+    ok_alert   = bool(webhook_alert)   and webhook_alert.startswith("https://hooks.slack.com/")
+    results["slack"] = ok_social
+    if ok_social and ok_alert:
+        print("✅  (#social + #alerting configurés)")
+    elif ok_social:
+        print("⚠️   #social OK — SLACK_ALERT_WEBHOOK_URL absent (#alerting Kestra KO)")
     else:
-        print("⚠️   SLACK_WEBHOOK_URL absent ou invalide dans .env → mode DRY RUN")
+        print("⚠️   SLACK_WEBHOOK_URL absent dans .env → mode DRY RUN")
 
     print()
     return results
@@ -174,25 +178,46 @@ def print_kestra_instructions() -> None:
 
 
 def print_demo_instructions() -> None:
-    """Instructions pour la démo live."""
+    """Instructions pour la démo live (restitution)."""
     print(f"\n{SEP}")
-    print("  DÉMO LIVE — Flask → Slack en < 10 secondes")
+    print("  DÉMO LIVE — Séquence complète pour la restitution")
     print(SEP)
     print(f"""
-  1. Démarrer Flask (terminal 1) :
-     conda activate datascience2
-     python src/flask_entry.py
+  ── SÉQUENCE RECOMMANDÉE (5 min) ───────────────────────────────
 
-  2. Ouvrir http://localhost:5001 dans le navigateur
+  1. DONNÉES & PIPELINE (1 min)
+     pgAdmin → http://localhost:5050
+     SELECT COUNT(*) FROM avantages_calcules;           → 161
+     SELECT SUM(montant_prime) FROM avantages_calcules; → ~106 427 €
 
-  3. Sélectionner un salarié + sport + durée → Enregistrer
+  2. SAISIE MANUELLE → SLACK (1 min)
+     Ouvrir http://localhost:{FLASK_PORT}
+     Sélectionner salarié + Running + 12 km + 55 min
+     Commentaire : "Belle sortie ce matin !"
+     → Clic Enregistrer
+     → Message Slack dans #social en < 5 secondes 🎉
 
-  4. Le message Slack apparaît dans le channel en < 5 secondes 🎉
+  3. ORCHESTRATION KESTRA (1 min)
+     Ouvrir http://localhost:8080
+     Flows → pipeline_complet → Execute
+     Vérifier les logs + alerting #alerting sur erreur
 
-  Ou via curl :
+  4. TABLEAU DESKTOP (2 min)
+     Ouvrir Tableau Desktop → Connexion PostgreSQL
+     Server : localhost  Port : 5432  DB : poc_sport
+     Actualiser (F5) → les visuels reflètent les nouvelles activités
+     Paramètre "Taux Prime Simulation" → curseur → recalcul en live
+
+  ── COMMANDES DE SECOURS ────────────────────────────────────────
+  python scripts/run_round3.py                    # relancer QC SODA + ETL Gold
+  python src/export_tableau.py --format hyper     # export Hyper si Tableau hors ligne
+  curl http://localhost:{FLASK_PORT}/api/stats              # KPI JSON
+  curl http://localhost:{FLASK_PORT}/health                 # santé Flask
+
+  Ou via curl (activité directe) :
   curl -X POST http://localhost:5001/api/activity \\
        -H "Content-Type: application/json" \\
-       -d '{{"employee_id":"12345","sport_type":"Running","duree_min":46,"distance_km":10.8,"commentaire":"Belle sortie !"}}' 
+       -d '{{"employee_id":"12345","sport_type":"Running","duree_min":46,"distance_km":10.8,"commentaire":"Belle sortie !"}}'
 """)
 
 

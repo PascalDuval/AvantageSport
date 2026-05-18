@@ -1015,22 +1015,32 @@ projet12/
 
 | Option | Mode | Prérequis | Dynamisme |
 |--------|------|-----------|-----------|
-| **A — PostgreSQL live** | Tableau Desktop → PostgreSQL → localhost:5432 | Tableau Desktop | ★★★ Live |
-| **B — Extract Hyper** | `export_tableau.py --format hyper` | `tableauhyperapi` | ★★★ Auto via Kestra |
-| **C — CSV** | `export_tableau.py` (défaut, v1) | Aucun | ★ Statique |
+| **A — PostgreSQL live** ⭐ *Recommandé* | Tableau Desktop → PostgreSQL → localhost:5432 | Tableau Desktop + driver JDBC | ★★★ Temps réel |
+| **B — Extract Hyper** | `export_tableau.py --format hyper` | `tableauhyperapi` (`pip install`) | ★★ Démo offline |
+| **C — CSV** | `export_tableau.py` (v1, fallback) | Aucun | ★ Statique |
+
+**Option A — Connexion PostgreSQL live (recommandée pour la démo) :**
+
+```
+Tableau Desktop → Se connecter → PostgreSQL
+Serveur : localhost  |  Port : 5432  |  Base : poc_sport
+Utilisateur : admin  |  Mot de passe : admin123
+Driver JDBC : C:\Program Files\Tableau\Drivers\postgresql-42.7.4.jar
+```
+
+> Après chaque `python scripts/run_round3.py`, un simple **F5** dans Tableau actualise tout.
+
+**Option B — Extract Hyper (démo hors ligne, sans PostgreSQL ouvert) :**
 
 ```powershell
-# Option C — CSV (v1, fallback universel)
-python src/export_tableau.py
-
-# Option B — Hyper extract (v2, dynamique)
-pip install tableauhyperapi
 python src/export_tableau.py --format hyper
-# → Tableau Desktop → Se connecter → Fichiers supplémentaires → *.hyper
+# → Tableau Desktop → Se connecter → Fichiers supplémentaires → reports/tableau/*.hyper
+```
 
-# Option A — Live PostgreSQL
-# Tableau Desktop → Se connecter → PostgreSQL
-# Serveur : localhost  Port : 5432  Base : poc_sport  User : admin
+**Option C — CSV (fallback universel, aucun prérequis) :**
+
+```powershell
+python src/export_tableau.py   # → reports/tableau/*.csv
 ```
 
 ### 8.4 Les 5 feuilles du rapport Tableau
