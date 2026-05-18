@@ -1,12 +1,14 @@
 """
-Tests Round 3 — ETL Gold + Quality Check
+Tests Round 3 — ETL Gold + Quality Check (SODA Core)
 
 Couvre :
   - Calcul du Gold (primes, journées BE, cohérence)
-  - Chaque règle qualité individuellement
+  - Chaque règle qualité individuellement (v1 SQL + v2 SODA Core)
   - Table avantages_calcules peuplée
   - Delta Lake Gold lisible
   - Idempotence (re-run → même résultat)
+  - Fichiers SodaCL présents et valides
+  - soda_runner : config, SEVERITY_MAP, parse_soda_results
 
 Lancer : pytest tests/test_round3.py -v
 """
@@ -489,3 +491,114 @@ class TestGoldDelta:
         conn.close()
         assert df["nb_probleme"].iloc[0] == 0, \
             "Des éligibles prime dans Gold ont montant_prime ≤ 0"
+
+
+# ══════════════════════════════════════════════════════════════════
+# Tests SODA Core (Round 3 — Quality Check v2)
+# ══════════════════════════════════════════════════════════════════
+
+class TestFichiersSoda:
+    """Vérifie que les fichiers SodaCL sont présents et bien formés."""
+
+    SODA_DIR = Path(__file__).parent.parent / "soda"
+
+    def test_configuration_yml_exists(self):
+        """soda/configuration.yml doit exister (template datasource)."""
+        assert (self.SODA_DIR / "configuration.yml").exists(), \
+            "soda/configuration.yml absent — git status ?"
+
+    def test_checks_employees_exists(self):
+        assert (self.SODA_DIR / "checks" / "employees.yml").exists()
+
+    def test_checks_strava_exists(self):
+        assert (self.SODA_DIR / "checks" / "strava_activities.yml").exists()
+
+    def test_checks_gold_exists(self):
+        assert (self.SODA_DIR / "checks" / "avantages_calcules.yml").exists()
+
+    def test_employees_yaml_valid(self):
+        """employees.yml doit être du YAML valide et contenir des checks."""
+        import yaml
+        content = (self.SODA_DIR / "checks" / "employees.yml").read_text(encoding="utf-8")
+        data = yaml.safe_load(content)
+        assert data is not None
+        assert "checks for employees" in content
+
+    def test_strava_yaml_valid(self):
+        import yaml
+        content = (self.SODA_DIR / "checks" / "strava_activities.yml").read_text(encoding="utf-8")
+        data = yaml.safe_load(content)
+        assert data is not None
+        assert "checks for strava_activities" in content
+
+    def test_gold_yaml_valid(self):
+        import yaml
+        content = (self.SODA_DIR / "checks" / "avantages_calcules.yml").read_text(encoding="utf-8")
+        data = yaml.safe_load(content)
+        assert data is not None
+        assert "checks for avantages_calcules" in content
+
+
+class TestSodaRunner:
+    """Tests unitaires de soda_runner.py (sans connexion DB)."""
+
+    def test_severity_map_contient_11_regles(self):
+        """SEVERITY_MAP doit couvrir les 11 règles SodaCL déclarées."""
+        from soda_runner import SEVERITY_MAP
+        assert len(SEVERITY_MAP) == 11
+
+    def test_severity_map_valeurs_valides(self):
+        """Toutes les sévérités doivent être BLOQUANT ou WARNING."""
+        from soda_runner import SEVERITY_MAP
+        for check_name, sev in SEVERITY_MAP.items():
+            assert sev in ("BLOQUANT", "WARNING"), \
+                f"Sévérité invalide pour '{check_name}': {sev}"
+
+    def test_severity_map_bloquants(self):
+        """Les règles critiques doivent être BLOQUANT."""
+        from soda_runner import SEVERITY_MAP
+        bloquants = {k for k, v in SEVERITY_MAP.items() if v == "BLOQUANT"}
+        assert "mode_deplacement_enum" in bloquants
+        assert "id_sans_decimal" in bloquants
+        assert "eligible_prime_coherence" in bloquants
+        assert "distance_sport_positive" in bloquants
+        assert "employee_id_fk" in bloquants
+        assert "gold_non_vide" in bloquants
+        assert "prime_coherence_gold" in bloquants
+
+    def test_severity_map_warnings(self):
+        """Les règles d'anomalie doivent être WARNING."""
+        from soda_runner import SEVERITY_MAP
+        warnings = {k for k, v in SEVERITY_MAP.items() if v == "WARNING"}
+        assert "salaire_plausible" in warnings
+        assert "anomalie_declaration_marche" in warnings
+        assert "anomalie_declaration_velo" in warnings
+        assert "dates_strava_fenetre_2025" in warnings
+
+    def test_build_config_yaml_contient_datasource(self):
+        """_build_config_yaml() doit produire un YAML avec la section data_sources."""
+        import yaml
+        from soda_runner import _build_config_yaml
+        config_str = _build_config_yaml()
+        data = yaml.safe_load(config_str)
+        assert "data_sources" in data
+        assert "poc_sport" in data["data_sources"]
+        ds = data["data_sources"]["poc_sport"]
+        assert ds["type"] == "postgres"
+        assert "host" in ds
+        assert "username" in ds
+
+    def test_parse_soda_results_empty(self):
+        """parse_soda_results avec une liste vide ne doit pas lever d'exception."""
+        from soda_runner import parse_soda_results
+        results = parse_soda_results([])
+        assert isinstance(results, list)
+        assert len(results) == 0
+
+    def test_soda_runner_importable(self):
+        """soda_runner doit être importable sans erreur."""
+        import importlib
+        mod = importlib.import_module("soda_runner")
+        assert hasattr(mod, "main")
+        assert hasattr(mod, "run_suite")
+        assert hasattr(mod, "SEVERITY_MAP")

@@ -16,9 +16,10 @@ Routes API (appelées par Kestra) :
   POST /api/ingest      → déclenche src/ingest_xlsx.py
   POST /api/generate    → déclenche src/generate_strava.py
   POST /api/etl         → déclenche src/etl_silver.py + src/etl_gold.py
-  POST /api/quality     → déclenche src/quality_check.py
-  POST /api/notify      → déclenche src/slack_notifier.py (poll)
-  GET  /api/stats       → KPI Gold depuis PostgreSQL (pour la démo)
+  POST /api/quality       → déclenche src/quality_check.py (v1 SQL, référence)
+  POST /api/quality/soda  → déclenche src/soda_runner.py (v2 SODA Core, Round 3)
+  POST /api/notify        → déclenche src/slack_notifier.py (poll)
+  GET  /api/stats         → KPI Gold depuis PostgreSQL (pour la démo)
 
 Usage:
     conda activate datascience2
@@ -231,7 +232,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <tr><td style="padding:6px 12px;color:#5eead4"><code>POST /api/etl</code></td>
             <td style="padding:6px 12px">ETL Silver + Gold (employees + avantages_calcules)</td></tr>
         <tr><td style="padding:6px 12px;color:#5eead4"><code>POST /api/quality</code></td>
-            <td style="padding:6px 12px">Lance les 9 règles qualité</td></tr>
+            <td style="padding:6px 12px">Quality check v1 — 9 règles SQL (référence)</td></tr>
+        <tr><td style="padding:6px 12px;color:#5eead4"><code>POST /api/quality/soda</code></td>
+            <td style="padding:6px 12px">Quality check SODA Core — 11 règles SodaCL (Round 3)</td></tr>
         <tr><td style="padding:6px 12px;color:#5eead4"><code>POST /api/notify</code></td>
             <td style="padding:6px 12px">Poll strava_activities → Slack (activités manuelles)</td></tr>
         <tr><td style="padding:6px 12px;color:#5eead4"><code>GET  /api/stats</code></td>
@@ -495,7 +498,7 @@ def api_etl():
 
 @app.route("/api/quality", methods=["POST"])
 def api_quality():
-    """Kestra flow 04 — contrôles qualité."""
+    """Kestra flow 04 — contrôles qualité v1 (SQL maison, référence)."""
     from quality_check import main as fn
     body = request.get_json(force=True, silent=True) or {}
     debut = datetime.now()
@@ -505,8 +508,28 @@ def api_quality():
         status = "SUCCESS" if pipeline_ok else "FAILED"
         log_run(flow_name="flask_api_quality", etape="quality_check",
                 statut=status, debut=debut, nb_lignes=9)
-        return ok({"pipeline_ok": pipeline_ok}, f"Quality check {status}")
+        return ok({"pipeline_ok": pipeline_ok, "engine": "sql_v1"}, f"Quality check {status}")
     except Exception as e:
+        return err(str(e), 500)
+
+
+@app.route("/api/quality/soda", methods=["POST"])
+def api_quality_soda():
+    """Kestra flow 04 — contrôles qualité SODA Core (Round 3)."""
+    from soda_runner import main as fn
+    body  = request.get_json(force=True, silent=True) or {}
+    debut = datetime.now()
+    try:
+        pipeline_ok = fn(
+            suite=body.get("suite", "all"),
+            fail_fast=body.get("fail_fast", False),
+        )
+        status = "SUCCESS" if pipeline_ok else "FAILED"
+        log_run(flow_name="flask_api_quality_soda", etape="soda_quality",
+                statut=status, debut=debut, nb_lignes=11)
+        return ok({"pipeline_ok": pipeline_ok, "engine": "soda_v2"}, f"SODA quality {status}")
+    except Exception as e:
+        logger.error(f"Erreur SODA : {e}", exc_info=True)
         return err(str(e), 500)
 
 

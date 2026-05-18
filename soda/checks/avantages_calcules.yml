@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────────────
+# SODA Checks — Table : avantages_calcules (Gold)
+# Round 6 — POC Avantages Sportifs
+# ─────────────────────────────────────────────────────────────────
+
+checks for avantages_calcules:
+
+  # ══════════════════════════════════════════════════════════════
+  # BLOQUANT
+  # ══════════════════════════════════════════════════════════════
+
+  # ① La table Gold ne doit pas être vide après l'ETL Gold
+  - row_count > 0:
+      name: gold_non_vide
+
+  # ② Cohérence prime : les éligibles doivent avoir montant_prime > 0
+  - failed rows:
+      name: prime_coherence_gold
+      fail query: |
+        SELECT employee_id, eligible_prime, montant_prime
+        FROM avantages_calcules
+        WHERE eligible_prime = TRUE
+          AND (montant_prime IS NULL OR montant_prime <= 0)

@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────
+# SODA Checks — Table : strava_activities (Bronze)
+# Round 6 — POC Avantages Sportifs
+# ─────────────────────────────────────────────────────────────────
+
+checks for strava_activities:
+
+  # ══════════════════════════════════════════════════════════════
+  # BLOQUANT
+  # ══════════════════════════════════════════════════════════════
+
+  # ① distance_m > 0 pour toutes les activités avec une distance renseignée
+  - failed rows:
+      name: distance_sport_positive
+      fail query: |
+        SELECT id, employee_id, sport_type, distance_m
+        FROM strava_activities
+        WHERE distance_m IS NOT NULL
+          AND distance_m <= 0
+
+  # ② Chaque employee_id doit référencer un salarié existant dans employees
+  - failed rows:
+      name: employee_id_fk
+      fail query: |
+        SELECT DISTINCT sa.employee_id
+        FROM strava_activities sa
+        LEFT JOIN employees e ON e.id = sa.employee_id
+        WHERE e.id IS NULL
+
+  # ══════════════════════════════════════════════════════════════
+  # WARNING
+  # ══════════════════════════════════════════════════════════════
+
+  # ③ Les dates d'activité doivent être dans la fenêtre 2025
+  #    (cohérent avec la simulation Monte Carlo Round 1)
+  - failed rows:
+      name: dates_strava_fenetre_2025
+      fail query: |
+        SELECT id, employee_id, sport_type, date_debut
+        FROM strava_activities
+        WHERE date_debut < '2025-01-01'
+           OR date_debut > '2025-12-31 23:59:59'

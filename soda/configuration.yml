@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────────
+# SODA Core — Configuration datasource
+# Round 6 — POC Avantages Sportifs
+#
+# Ce fichier est un modèle documentaire.
+# Les credentials réels sont injectés dynamiquement par soda_runner.py
+# via les variables de config.py (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME).
+#
+# Pour un usage CLI direct (soda scan) : copier ce fichier et remplir
+# les valeurs, ou exporter les variables d'environnement correspondantes.
+# ─────────────────────────────────────────────────────────────────
+
+data_sources:
+  poc_sport:
+    type: postgres
+    host: ${DB_HOST}          # défaut : localhost
+    port: ${DB_PORT}          # défaut : 5432
+    username: ${DB_USER}      # défaut : admin
+    password: ${DB_PASSWORD}  # défaut : admin123
+    database: ${DB_NAME}      # défaut : poc_sport

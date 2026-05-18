@@ -11,12 +11,12 @@
 3. [Environnement et démarrage](#3-environnement-et-démarrage)
 4. [Round 1 — Infra + Simulation Strava-like](#4-round-1--infra--simulation-strava-like)
 5. [Round 2 — Ingestion XLSX + ETL Silver + Google Maps](#5-round-2--ingestion-xlsx--etl-silver--google-maps)
-6. [Round 3 — Quality Check + ETL Gold](#6-round-3--quality-check--etl-gold)
+6. [Round 3 — Quality Check SODA + ETL Gold](#6-round-3--quality-check-soda--etl-gold)
 7. [Round 4 — Orchestration Kestra + Flask + Notifications Slack](#7-round-4--orchestration-kestra--flask--notifications-slack)
 8. [Round 5 — Power BI + Export CSV + Clôture projet](#8-round-5--power-bi--export-csv--clôture-projet)
 9. [Schéma de base de données](#9-schéma-de-base-de-données)
 10. [Architecture Delta Lake](#10-architecture-delta-lake)
-11. [Évolution vers Great Expectations](#11-évolution-vers-great-expectations)
+11. [SODA Core — Quality Check déclaratif](#11-soda-core--quality-check-déclaratif)
 12. [Dépannage](#12-dépannage)
 
 ---
@@ -56,7 +56,7 @@ Le POC couvre l'ensemble du périmètre défini dans la note de cadrage (infrast
 |-----------|-----------|--------------------------|
 | Données activités sportives | Simulateur Monte Carlo (`generate_strava.py`) | Connexion directe API Strava |
 | Stockage Delta Lake | Local (`data/delta/`) via `delta-rs`, sans Spark | S3 / Azure Blob + Spark ou Databricks |
-| Qualité des données | SQL maison (`quality_check.py`, 9 règles) | Great Expectations ou SODA (voir §11) |
+| Qualité des données | SODA Core (`soda_runner.py`, 11 règles SodaCL) — voir §11 | SODA managé ou Great Expectations |
 | Orchestration | Kestra standalone (H2 embarqué, Docker local) | Kestra ou Airflow managé (cloud) |
 | Pont Docker ↔ Python | Flask HTTP (voir §7.3) | Scripts containerisés dans Docker |
 
@@ -87,9 +87,9 @@ strava_activities (simulé) ┘        │
    data/delta/silver/employees/
          │
          ▼
-   [Quality Check — src/quality_check.py]
-   9 règles SQL (BLOQUANT + WARNING)
-   rapport HTML + data_quality_results
+   [Quality Check SODA — src/soda_runner.py]  (Round 3)
+   11 règles SodaCL déclaratives (YAML) · SODA Core · rapport HTML
+   (src/quality_check.py — 9 règles SQL conservées comme référence v1)
          │
          ▼
    [ETL Gold — src/etl_gold.py]
@@ -107,7 +107,7 @@ strava_activities (simulé) ┘        │
          │                 │
          ▼                 ▼
    Slack Webhook       Kestra (Docker)
-   notifications       orchestration des 6 flows
+   notifications       orchestration des 6 flows (00→05)
    temps réel          schedules automatiques
          │
          ▼
@@ -129,11 +129,12 @@ strava_activities (simulé) ┘        │
 | **googlemaps** | SDK Python Google Maps API | R2 |
 | **python-dotenv** | Chargement `.env` → variables d'environnement | R1 |
 | **Flask** | Pont HTTP entre Kestra (Docker) et les scripts Python (hôte) | R4 |
-| **Kestra** | Orchestrateur de workflows — 6 flows, schedules, UI | R4 |
+| **Kestra** | Orchestrateur de workflows — 6 flows (00→05), schedules, UI | R4 |
 | **requests** | Appels HTTP sortants (Slack webhook, Kestra API) | R4 |
 | **Slack Incoming Webhooks** | Notifications temps réel dans un channel | R4 |
 | **openpyxl** | Export Excel multi-onglets pour Power BI | R5 |
 | **Power BI Desktop** | Rapport 5 pages, DAX What-If, connexion PostgreSQL/CSV | R5 |
+| **soda-core-postgres** | Quality Check déclaratif — 11 règles SodaCL (BLOQUANT + WARNING) | R3 |
 
 ### Pourquoi PostgreSQL plutôt qu'une autre base ?
 
@@ -194,8 +195,15 @@ AvantageSport/
 │       ├── 01_ingest_xlsx.yml
 │       ├── 02_generate_strava.yml
 │       ├── 03_etl_silver_gold.yml      ← schedule quotidien 6h
-│       ├── 04_quality_check.yml
+│       ├── 04_quality_check.yml        ← Quality Check SODA (11 règles SodaCL)
 │       └── 05_notify_slack.yml         ← polling Slack toutes les 5 min
+│
+├── soda/                               ← Round 3 — checks SodaCL déclaratifs
+│   ├── configuration.yml               ← modèle datasource SODA
+│   └── checks/
+│       ├── employees.yml               ← 6 règles Silver SodaCL
+│       ├── strava_activities.yml       ← 3 règles Bronze SodaCL
+│       └── avantages_calcules.yml      ← 2 règles Gold SodaCL
 │
 ├── logs/                               ← vide — généré au runtime
 ├── reports/                            ← vide — généré par export_power_bi.py
@@ -203,9 +211,10 @@ AvantageSport/
 ├── scripts/
 │   ├── run_round1.py                   ← infra + simulation Strava-like
 │   ├── run_round2.py                   ← ingestion XLSX + ETL Silver + Google Maps
-│   ├── run_round3.py                   ← quality check + ETL Gold
+│   ├── run_round3.py                   ← quality check SODA + ETL Gold
 │   ├── run_round4.py                   ← vérification setup Kestra + Flask + Slack
-│   └── run_round5.py                   ← export Power BI + bilan final
+│   ├── run_round5.py                   ← export Power BI + bilan final
+│   └── deploy_kestra_flows.py          ← push flows → Kestra API
 │
 ├── sql/
 │   ├── init.sql                        ← création des 9 tables PostgreSQL
@@ -219,7 +228,8 @@ AvantageSport/
 │   ├── bronze_writer.py                ← écriture Delta Lake Bronze
 │   ├── etl_silver.py                   ← normalisation + distances + éligibilité
 │   ├── etl_gold.py                     ← calcul primes et journées bien-être
-│   ├── quality_check.py                ← 9 règles SQL de contrôle qualité
+│   ├── quality_check.py                ← 9 règles SQL (v1 référence, Round 3)
+│   ├── soda_runner.py                  ← 11 règles SodaCL (v2 SODA Core, Round 3)
 │   ├── gmaps_client.py                 ← Google Maps API + cache PostgreSQL
 │   ├── flask_entry.py                  ← pont HTTP Kestra ↔ Python + UI saisie manuelle
 │   ├── slack_notifier.py               ← notifications Slack (Block Kit)
@@ -228,7 +238,7 @@ AvantageSport/
 └── tests/
     ├── test_round1.py                  ← 11 tests
     ├── test_round2.py                  ← 49 tests
-    ├── test_round3.py                  ← 32 tests
+    ├── test_round3.py                  ← ~50 tests (ETL Gold + Quality Check + SODA)
     ├── test_round4.py                  ← 31 tests
     └── test_round5.py                  ← ~35 tests
 
@@ -597,12 +607,14 @@ pytest tests/test_round2.py -v
 
 ---
 
-## 6. Round 3 — Quality Check + ETL Gold
+## 6. Round 3 — Quality Check SODA + ETL Gold
 
 ### 6.1 Objectif
 
 Round 3 produit la **couche Gold** du pipeline : validation de la qualité des données
-(9 règles SQL) puis calcul effectif des avantages financiers.
+via **SODA Core** (11 règles SodaCL déclaratives) puis calcul effectif des avantages financiers.
+
+La version précédente SQL (9 règles, `quality_check.py`) est conservée intacte comme référence v1 ; les deux écrivent dans la même table `data_quality_results`.
 
 ### 6.2 Exécution
 
@@ -617,19 +629,24 @@ python scripts/run_round3.py --fail-fast        # stoppe si une règle BLOQUANTE
 python scripts/run_round3.py --params-version v2.0_taux7pct
 ```
 
-### 6.3 Quality Check — les 9 règles
+### 6.3 Quality Check SODA — les 11 règles SodaCL
 
-| # | Règle | Table | Sévérité | Ce qu'elle vérifie |
-|---|-------|-------|----------|--------------------|
-| ① | `anomalie_declaration_marche` | `employees` | WARNING | Marche déclarée mais distance > 15 km |
-| ② | `anomalie_declaration_velo` | `employees` | WARNING | Vélo déclaré mais distance > 25 km |
-| ③ | `eligible_prime_coherence_etl` | `employees` | **BLOQUANT** | Aucun `eligible_prime=True` ne viole les règles métier |
-| ④ | `mode_deplacement_enum` | `employees` | **BLOQUANT** | Modes dans les 4 valeurs de l'enum normalisé |
-| ⑤ | `id_sans_decimal` | `employees` | **BLOQUANT** | Aucun ID contenant `.` |
-| ⑥ | `salaire_plausible` | `employees` | WARNING | `salaire_brut` dans [1, 500 000 €] |
+Le moteur principal est **SODA Core** (`src/soda_runner.py`, appelé via `POST /api/quality/soda`).
+La v1 SQL (`quality_check.py`, 9 règles) est conservée comme référence et reste accessible via `POST /api/quality`.
+
+| # | Règle SodaCL | Table | Sévérité | Ce qu'elle vérifie |
+|---|-------------|-------|----------|--------------------|
+| ① | `mode_deplacement_enum` | `employees` | **BLOQUANT** | Modes dans les 4 valeurs de l'enum normalisé |
+| ② | `id_sans_decimal` | `employees` | **BLOQUANT** | Aucun ID contenant `.` |
+| ③ | `eligible_prime_coherence` | `employees` | **BLOQUANT** | Aucun `eligible_prime=True` ne viole les règles métier |
+| ④ | `salaire_plausible` | `employees` | WARNING | `salaire_brut` dans [1, 500 000 €] |
+| ⑤ | `anomalie_declaration_marche` | `employees` | WARNING | Marche déclarée mais distance > 15 km |
+| ⑥ | `anomalie_declaration_velo` | `employees` | WARNING | Vélo déclaré mais distance > 25 km |
 | ⑦ | `distance_sport_positive` | `strava_activities` | **BLOQUANT** | `distance_m > 0` si non NULL |
 | ⑧ | `employee_id_fk` | `strava_activities` | **BLOQUANT** | Tous les `employee_id` existent dans `employees` |
 | ⑨ | `dates_strava_fenetre_2025` | `strava_activities` | WARNING | Dates dans la fenêtre 2025 |
+| ⑩ | `gold_non_vide` | `avantages_calcules` | **BLOQUANT** | `row_count > 0` — Gold peuplé |
+| ⑪ | `prime_coherence_gold` | `avantages_calcules` | **BLOQUANT** | Éligibles prime ont `montant_prime > 0` |
 
 ### 6.4 ETL Gold — résultats
 
@@ -663,13 +680,15 @@ UPDATE config SET valeur = 'v1.0' WHERE cle = 'params_version';
 
 ```powershell
 pytest tests/test_round3.py -v
-# Résultat attendu : 32 passed, 1 skipped
+# Résultat attendu : ~50 passed, 1 skipped
 ```
 
 - `TestEtlGold` (7 tests) : paramètres config, formule prime, dry-run, journées BE
-- `TestQualityCheck` (13 tests) : chaque règle SQL, persistance, rapport HTML
+- `TestQualityCheck` (13 tests) : chaque règle SQL v1, persistance, rapport HTML
 - `TestAvantagesDB` (6 tests + 1 skipped) : 161 lignes, éligibles = 68, primes cohérentes
 - `TestGoldDelta` (4 tests) : Delta Lake Gold lisible, schéma correct
+- `TestFichiersSoda` (7 tests) : fichiers `soda/checks/*.yml` présents et YAML valides
+- `TestSodaRunner` (7 tests) : `SEVERITY_MAP`, `_build_config_yaml`, importabilité
 
 ---
 
@@ -762,7 +781,7 @@ Kestra (Docker, localhost:8080)
 | 01 | `ingest_xlsx` | `poc.avantages_sportifs` | Manuel | Nouveau fichier XLSX déposé |
 | 02 | `generate_strava` | `poc.avantages_sportifs` | Manuel | Re-simulation Monte Carlo |
 | 03 | `etl_silver_gold` | `poc.avantages_sportifs` | `0 6 * * *` | Recalcul journalier automatique à 6h |
-| 04 | `quality_check` | `poc.avantages_sportifs` | Manuel | Audit qualité après ETL ou incident |
+| 04 | `quality_check` | `poc.avantages_sportifs` | Manuel | Quality Check SODA (11 règles SodaCL) après ETL ou incident |
 | 05 | `notify_slack` | `poc.avantages_sportifs` | `*/5 * * * *` | Polling toutes les 5 minutes |
 
 > **Flow 00 `pipeline_complet`** : utilise `io.kestra.plugin.core.flow.Subflow` pour
@@ -869,7 +888,8 @@ Get-ChildItem kestra\flows\*.yml | ForEach-Object {
 | `POST` | `/api/ingest` | `dry_run?` | Lance `ingest_xlsx.py` |
 | `POST` | `/api/generate` | `dry_run?` | Lance `generate_strava.py` |
 | `POST` | `/api/etl` | `dry_run?, skip_gmaps?` | ETL Silver + Gold |
-| `POST` | `/api/quality` | `suite?, fail_fast?` | Quality check (9 règles) |
+| `POST` | `/api/quality` | `suite?, fail_fast?` | Quality check v1 SQL (9 règles, référence) |
+| `POST` | `/api/quality/soda` | `suite?, fail_fast?` | Quality check SODA Core (11 règles SodaCL) |
 | `POST` | `/api/notify` | `since_minutes?, dry_run?` | Poll Slack (activités manuelles) |
 
 ```bash
@@ -1136,38 +1156,47 @@ conn.execute("SELECT * FROM delta_scan('data/delta/silver/employees')")
 
 ---
 
-## 11. Évolution vers Great Expectations
+## 11. SODA Core — Quality Check déclaratif
 
-> Cette section documente comment le module `quality_check.py` (Round 3) pourrait être
-> remplacé ou complété par **Great Expectations (GX)**, le framework de qualité de données
-> le plus utilisé en production. Elle sert de feuille de route si le POC passe en
-> industrialisation.
+> Round 3 introduit **SODA Core** (`soda_runner.py`) comme moteur principal de contrôle qualité : 11 règles SodaCL déclaratives en YAML, plus lisibles et extensibles que les 9 règles SQL v1.
+> Les deux coexistent et écrivent dans la même table `data_quality_results` (colonne `suite_name` les distingue).
 
-### 10.1 Pourquoi Great Expectations ?
+### Pourquoi SODA plutôt que Great Expectations ?
 
-| Besoin | quality_check.py actuel | Great Expectations |
-|--------|------------------------|--------------------|
-| Ajouter une règle | Écrire du SQL + Python | Configurer une *Expectation* en YAML ou Python |
-| Profiling automatique | ❌ Manuel | ✅ `UserConfigurableProfiler` génère les règles depuis les données |
-| Rapport HTML riche | Basique (fait maison) | ✅ Data Docs — HTML interactif auto-généré |
-| Historique des runs | Table SQL maison | ✅ `ValidationResultStore` natif |
-| Intégration Kestra | Script Python classique | ✅ Opérateurs dédiés |
-| Versionning des suites | Dans le code | ✅ `ExpectationSuite` versionnée en JSON |
-| Alertes Slack | ❌ (fait manuellement en R4) | ✅ Actions post-validation natives |
+| Besoin | quality_check.py (v1) | SODA Core (v2) | Great Expectations |
+|--------|----------------------|----------------|--------------------|
+| **Ajouter une règle** | Écrire SQL + Python | 2 lignes YAML | 10+ lignes Python |
+| **Intégration Kestra** | Script Python classique | `soda scan` = 1 commande | Checkpoint à orchestrer |
+| **Rapport auto** | HTML fait maison | HTML natif + notre template | Data Docs à configurer |
+| **Courbe d'apprentissage** | Faible (SQL connu) | Faible (YAML) | Élevée (API v1.x) |
+| **Checks multi-tables** | Une fonction par règle | Un fichier YAML par table | Suites par Data Asset |
 
-### 10.2 Correspondance règles actuelles → Expectations GX
+### Correspondance règles v1 → SodaCL
 
-| Règle actuelle | Expectation GX équivalente |
-|----------------|---------------------------|
-| `id_sans_decimal` | `expect_column_values_to_not_match_regex(column="id", regex=r"\.")` |
-| `mode_deplacement_enum` | `expect_column_values_to_be_in_set(column="mode_deplacement", value_set=[...])` |
-| `distance_sport_positive` | `expect_column_values_to_be_between(column="distance_m", min_value=1)` |
-| `employee_id_fk` | Custom SQL Expectation |
-| `anomalie_declaration_marche` | `expect_column_values_to_be_between(max_value=15)` avec filtre |
-| `dates_strava_fenetre_2025` | `expect_column_values_to_be_between(min="2025-01-01", max="2025-12-31")` |
+| Règle v1 (`quality_check.py`) | Check SodaCL équivalent |
+|-------------------------------|------------------------|
+| `check_mode_enum` | `invalid_count(mode_deplacement) = 0` avec `valid values:` |
+| `check_ids_sans_decimal` | `invalid_count(id) = 0` avec `invalid regex:` |
+| `check_eligible_prime_coherence` | `failed rows` avec `fail query:` SQL |
+| `check_salaire_plausible` | `invalid_count(salaire_brut)` avec `valid min/max:` + `warn:` |
+| `check_distance_marche` | `failed rows` avec `fail query:` SQL |
+| `check_distance_velo` | `failed rows` avec `fail query:` SQL |
+| `check_distance_sport_positive` | `failed rows` avec `fail query:` SQL |
+| `check_employee_id_fk` | `failed rows` avec `fail query:` SQL |
+| `check_dates_strava_2025` | `failed rows` avec `fail query:` SQL |
+| *(R3 SODA uniquement)* | `row_count > 0` sur avantages_calcules |
+| *(R3 SODA uniquement)* | `prime_coherence_gold` sur avantages_calcules |
 
-> **Recommandation** : conserver `quality_check.py` pour le POC. Migrer vers GX si le
-> pipeline passe en production avec plusieurs tables, plusieurs sources, ou plusieurs équipes.
+### Fichiers clés
+
+| Fichier | Rôle |
+|---------|------|
+| `soda/checks/employees.yml` | 6 règles Silver SodaCL |
+| `soda/checks/strava_activities.yml` | 3 règles Bronze SodaCL |
+| `soda/checks/avantages_calcules.yml` | 2 règles Gold SodaCL |
+| `src/soda_runner.py` | Runner Python : scan → parse → save → HTML |
+| `kestra/flows/04_quality_check.yml` | Flow Kestra — appelle `/api/quality/soda` |
+| `scripts/deploy_kestra_flows.py` | Push flows → Kestra via API REST |
 
 ---
 
@@ -1202,3 +1231,8 @@ conn.execute("SELECT * FROM delta_scan('data/delta/silver/employees')")
 | ODBC "Driver not found" | psqlODBC non installé | Télécharger sur postgresql.org/ftp/odbc |
 | Kestra "Unknown network poc_network" | PostgreSQL non démarré en premier | Démarrer `postgres` avant `kestra` |
 | Taux What-If ne change pas le coût | Mesure DAX non liée | Utiliser la mesure `Coût Simulé Primes` de `reports/dax_measures.md` |
+| `ImportError: soda.scan` (Round 3) | soda-core-postgres non installé | `pip install soda-core-postgres==3.3.3` |
+| Exit code 2 sur scan SODA | Erreur datasource (credentials) | Vérifier `DB_HOST/USER/PASSWORD` dans `.env` |
+| Flask 500 sur `/api/quality/soda` | SODA absent ou scan échoué | Voir `logs/soda_runner.log` |
+| Kestra 404 sur PUT flow | Namespace/id incorrect | Vérifier `id: quality_check` et `namespace:` dans le YAML |
+| `No checks found` SODA | YAML mal indenté | Valider `soda/checks/*.yml` (indentation YAML stricte) |

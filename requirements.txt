@@ -30,9 +30,9 @@ ruff==0.7.1                     # Linter rapide
 # ── Round 2+ (Google Maps API) ───────────────────────────────────
 googlemaps==4.10.0            # Décommenter en Round 2
 
-# ── Round 3+ (Great Expectations) ───────────────────────────────
-# great-expectations==0.18.12   # Décommenter en Round 3
-
 # ── Round 4+ (Kestra + Slack) ────────────────────────────────────
 # requests==2.32.3              # Webhook Slack (souvent déjà installé)
 # flask==3.0.3                  # Mini-UI saisie manuelle (Round 4)
+
+# ── Round 6 — SODA Core (qualité données déclarative) ────────────
+soda-core-postgres==3.3.3       # Quality checks SodaCL + connecteur PostgreSQL

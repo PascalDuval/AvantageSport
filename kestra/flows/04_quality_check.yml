@@ -1,33 +1,41 @@
 # ═══════════════════════════════════════════════════════════════
-# Flow Kestra 04 — Contrôles Qualité
+# Flow Kestra 04 — Contrôles Qualité (SODA Core)
 # Namespace : poc.avantages_sportifs
 # Déclenche : après etl_silver_gold, ou manuellement
 #
-# Action : appelle POST /api/quality
-#          → src/quality_check.py (9 règles SQL)
-#          → data_quality_results + reports/quality_report.html
+# Action : appelle POST /api/quality/soda
+#          → src/soda_runner.py (11 règles SodaCL)
+#          → soda/checks/employees.yml          (6 règles Silver)
+#          → soda/checks/strava_activities.yml  (3 règles Bronze)
+#          → soda/checks/avantages_calcules.yml (2 règles Gold)
+#          → data_quality_results + reports/soda_quality_report.html
+#
+# Qualité v1 (SQL maison) conservée en référence : src/quality_check.py
+# Disponible via POST /api/quality si besoin de comparaison.
 # ═══════════════════════════════════════════════════════════════
 id: quality_check
 namespace: poc.avantages_sportifs
 
 labels:
-  round: "4"
+  round: "3"
+  engine: "soda-core-postgres"
 
 description: |
-  Exécute les 9 règles qualité SQL sur les données Silver et Bronze.
-  Génère le rapport HTML dans reports/quality_report.html.
+  Contrôles qualité SODA Core — 11 règles SodaCL déclaratives.
+  Tables : employees (Silver), strava_activities (Bronze), avantages_calcules (Gold).
+  Génère le rapport HTML dans reports/soda_quality_report.html.
   En cas de BLOQUANT : log ERROR mais ne bloque pas le flow suivant
-  (sauf si fail_fast = true).
+  (transmitFailed = false dans pipeline_complet).
 
 inputs:
   - id: suite
     type: STRING
     defaults: all
-    description: "'all', 'silver' ou 'bronze'"
+    description: "'all', 'employees', 'strava', ou 'gold'"
   - id: fail_fast
     type: BOOLEAN
     defaults: false
-    description: "Stopper dès le premier BLOQUANT"
+    description: "Stopper dès le premier BLOQUANT détecté"
 
 tasks:
 
@@ -35,21 +43,25 @@ tasks:
     type: io.kestra.plugin.core.http.Request
     uri: "http://host.docker.internal:5001/health"
     method: GET
+    description: "Vérifier que Flask Entry est accessible"
 
   - id: run_quality
     type: io.kestra.plugin.core.http.Request
-    uri: "http://host.docker.internal:5001/api/quality"
+    uri: "http://host.docker.internal:5001/api/quality/soda"
     method: POST
     contentType: application/json
     body: '{"suite": "all", "fail_fast": false}'
-    description: "9 règles SQL → data_quality_results + rapport HTML"
+    description: "11 règles SodaCL → data_quality_results + rapport HTML"
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log
-    message: "Quality check terminé. Résultat : {{ outputs.run_quality.body }}"
+    message: |
+      Quality Check SODA terminé.
+      Résultat  : {{ outputs.run_quality.body }}
+      Rapport   : reports/soda_quality_report.html
 
 errors:
   - id: on_failure
     type: io.kestra.plugin.core.log.Log
     level: ERROR
-    message: "ECHEC quality_check — Voir reports/quality_report.html"
+    message: "ECHEC quality_check — Voir reports/soda_quality_report.html et logs/soda_runner.log"

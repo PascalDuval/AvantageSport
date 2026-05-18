@@ -20,7 +20,7 @@ labels:
 description: |
   Flow maître : orchestre les 5 flows du pipeline dans l'ordre.
   Utilisé pour la démo et la restitution.
-  En cas d'échec du Quality Check (flow 04), le pipeline continue
+  En cas d'échec du Quality Check SODA (flow 04), le pipeline continue
   sans être bloqué (transmitFailed = false) sauf si fail_fast=true.
 
 inputs:
@@ -70,7 +70,7 @@ tasks:
     flowId: quality_check
     wait: true
     transmitFailed: false
-    description: "Étape 4 : 9 règles qualité (non bloquant par défaut)"
+    description: "Étape 4 : Quality Check v1 — 9 règles SQL (référence)"
 
   - id: step_05_notify
     type: io.kestra.plugin.core.flow.Subflow
@@ -82,7 +82,7 @@ tasks:
 
   - id: log_completion
     type: io.kestra.plugin.core.log.Log
-    message: "Pipeline complet terminé avec succès — voir http://localhost:5001/api/stats"
+    message: "Pipeline complet terminé — stats: http://localhost:5001/api/stats · rapport SODA: reports/soda_quality_report.html"
 
 errors:
   - id: on_pipeline_failure

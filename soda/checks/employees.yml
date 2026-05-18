@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────
+# SODA Checks — Table : employees (Silver)
+# Round 6 — POC Avantages Sportifs
+#
+# Sévérités :
+#   BLOQUANT → check avec seuil = 0 (fail si valeur > 0)
+#   WARNING  → check avec warn: when > 0 (ou géré dans soda_runner.py)
+#
+# Les checks "failed rows" pour les anomalies de déclaration (WARNING)
+# produisent un outcome "fail" côté SODA ; la sévérité réelle est
+# déterminée par le SEVERITY_MAP de soda_runner.py (non bloquant).
+# ─────────────────────────────────────────────────────────────────
+
+checks for employees:
+
+  # ══════════════════════════════════════════════════════════════
+  # BLOQUANT — Règles qui invalident le pipeline si elles échouent
+  # ══════════════════════════════════════════════════════════════
+
+  # ① mode_deplacement doit être dans l'enum normalisé
+  - invalid_count(mode_deplacement) = 0:
+      name: mode_deplacement_enum
+      valid values:
+        - marche_running
+        - velo_trottinette
+        - transports_commun
+        - vehicule
+
+  # ② Aucun ID salarié ne doit contenir un point décimal (ex: "59019.0")
+  - invalid_count(id) = 0:
+      name: id_sans_decimal
+      invalid regex: '.*\..*'
+
+  # ③ Cohérence ETL : eligible_prime=True ne peut pas violer les règles métier
+  #    (distance > seuil ou mode non éligible)
+  - failed rows:
+      name: eligible_prime_coherence
+      fail query: |
+        SELECT id, eligible_prime, mode_deplacement, distance_bureau_km
+        FROM employees
+        WHERE eligible_prime = TRUE
+          AND (
+            (mode_deplacement = 'marche_running'   AND distance_bureau_km > 15)
+            OR (mode_deplacement = 'velo_trottinette' AND distance_bureau_km > 25)
+            OR mode_deplacement IN ('transports_commun', 'vehicule')
+          )
+
+  # ══════════════════════════════════════════════════════════════
+  # WARNING — Anomalies signalées mais non bloquantes
+  # ══════════════════════════════════════════════════════════════
+
+  # ④ Salaire brut dans une plage plausible (1 € → 500 000 €)
+  - invalid_count(salaire_brut):
+      name: salaire_plausible
+      valid min: 1
+      valid max: 500000
+      warn: when > 0
+
+  # ⑤ Anomalie déclaration : marche_running mais domicile > 15 km
+  #    (salarié déjà exclu de la prime — pipeline non bloqué)
+  - failed rows:
+      name: anomalie_declaration_marche
+      fail query: |
+        SELECT id, mode_deplacement, distance_bureau_km
+        FROM employees
+        WHERE mode_deplacement = 'marche_running'
+          AND distance_bureau_km IS NOT NULL
+          AND distance_bureau_km > 15
+
+  # ⑥ Anomalie déclaration : velo_trottinette mais domicile > 25 km
+  - failed rows:
+      name: anomalie_declaration_velo
+      fail query: |
+        SELECT id, mode_deplacement, distance_bureau_km
+        FROM employees
+        WHERE mode_deplacement = 'velo_trottinette'
+          AND distance_bureau_km IS NOT NULL
+          AND distance_bureau_km > 25
