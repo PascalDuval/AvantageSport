@@ -7,7 +7,7 @@
 # Étapes :
 #   1. ETL Silver (src/etl_silver.py) → employees normalisés
 #   2. ETL Gold   (src/etl_gold.py)  → avantages_calcules
-# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Alerting : canal Slack #alerting sur échec (envs.SLACK_ALERT_WEBHOOK_URL)
 # Retry : health_check 3×/10 s · run_etl 2×/60 s (opération longue)
 # ═══════════════════════════════════════════════════════════════
 id: etl_silver_gold

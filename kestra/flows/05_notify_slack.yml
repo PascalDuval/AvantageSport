@@ -5,7 +5,7 @@
 # Déclenche : automatiquement ou après une saisie Flask
 #
 # Action : poll les nouvelles activités manuelles → webhook Slack #social
-# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Alerting : canal Slack #alerting sur échec (envs.SLACK_ALERT_WEBHOOK_URL)
 # Retry : health_check 2×/15 s · run_notify 2×/30 s
 # ═══════════════════════════════════════════════════════════════
 id: notify_slack
