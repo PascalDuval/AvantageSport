@@ -26,6 +26,8 @@ services:
       # Stockage interne Kestra (exécutions, logs, artefacts)
       - kestra_storage:/app/storage
     environment:
+      # Webhook Slack canal #alerting — défini dans .env à la racine du projet
+      SLACK_ALERT_WEBHOOK_URL: ${SLACK_ALERT_WEBHOOK_URL:-}
       KESTRA_CONFIGURATION: |
         kestra:
           server:

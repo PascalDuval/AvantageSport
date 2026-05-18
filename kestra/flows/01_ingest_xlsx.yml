@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 01 — Ingestion XLSX
 # Namespace : poc.avantages_sportifs
 # Déclenche : manuellement ou depuis pipeline_complet
@@ -72,7 +72,7 @@ errors:
 
   - id: slack_alert
     type: io.kestra.plugin.core.http.Request
-    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    uri: "{{ envs.SLACK_ALERT_WEBHOOK_URL }}"
     method: POST
     contentType: application/json
     body: |

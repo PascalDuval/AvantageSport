@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 03 — ETL Silver + Gold
 # Namespace : poc.avantages_sportifs
 # Schedule  : 0 6 * * *  (tous les jours à 6h)
@@ -84,7 +84,7 @@ errors:
 
   - id: slack_alert
     type: io.kestra.plugin.core.http.Request
-    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    uri: "{{ envs.SLACK_ALERT_WEBHOOK_URL }}"
     method: POST
     contentType: application/json
     body: |

@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 04 — Contrôles Qualité (SODA Core)
 # Namespace : poc.avantages_sportifs
 # Déclenche : après etl_silver_gold, ou manuellement
@@ -84,7 +84,7 @@ errors:
 
   - id: slack_alert
     type: io.kestra.plugin.core.http.Request
-    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    uri: "{{ envs.SLACK_ALERT_WEBHOOK_URL }}"
     method: POST
     contentType: application/json
     body: |
