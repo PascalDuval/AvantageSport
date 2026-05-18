@@ -18,6 +18,7 @@
 10. [Architecture Delta Lake](#10-architecture-delta-lake)
 11. [SODA Core — Quality Check déclaratif](#11-soda-core--quality-check-déclaratif)
 12. [Dépannage](#12-dépannage)
+13. [Alerting, Monitoring & Tests](#13-alerting-monitoring--tests)
 
 ---
 
@@ -1236,3 +1237,131 @@ conn.execute("SELECT * FROM delta_scan('data/delta/silver/employees')")
 | Flask 500 sur `/api/quality/soda` | SODA absent ou scan échoué | Voir `logs/soda_runner.log` |
 | Kestra 404 sur PUT flow | Namespace/id incorrect | Vérifier `id: quality_check` et `namespace:` dans le YAML |
 | `No checks found` SODA | YAML mal indenté | Valider `soda/checks/*.yml` (indentation YAML stricte) |
+| `{{ envs.SLACK_ALERT_WEBHOOK_URL }}` vide | Variable Docker non injectée | Vérifier `.env` + redémarrer Kestra (`docker compose ... down && up -d`) |
+| Alerte Slack non reçue sur `#alerting` | Webhook incorrect ou canal manquant | Tester l'URL avec `curl -X POST <url> -d '{"text":"test"}'` |
+
+---
+
+## 13. Alerting, Monitoring & Tests
+
+### 13.1 Alerting Kestra → Slack `#alerting`
+
+#### Principe
+
+Chaque flow Kestra dispose d'un bloc `errors:` qui envoie **directement** un message Block Kit sur le canal Slack `#alerting` en cas d'échec — sans passer par Flask, donc opérationnel même si Flask est arrêté.
+
+```
+Flow Kestra échoue
+    └──► errors: log_failure (level: ERROR — visible dans Kestra UI)
+    └──► errors: slack_alert → POST webhook #alerting (Block Kit JSON)
+                   │
+                   ▼
+    🚨 Message Slack avec : Flow ID · Execution ID · Cause · Bouton "Voir dans Kestra"
+```
+
+#### Choix technique : variable d'environnement Docker
+
+Les **Namespace Variables** de Kestra sont une fonctionnalité Enterprise (verrou dans l'UI OSS).
+Contournement retenu pour le POC : injecter le webhook via une variable d'environnement Docker,
+accessible dans les flows avec `{{ envs.SLACK_ALERT_WEBHOOK_URL }}`.
+
+```
+.env (racine projet)                 docker-compose.kestra.yml
+SLACK_ALERT_WEBHOOK_URL=https://...  →  environment:
+                                           SLACK_ALERT_WEBHOOK_URL: ${SLACK_ALERT_WEBHOOK_URL:-}
+                                                    │
+                                                    ▼
+                                    Flows : uri: "{{ envs.SLACK_ALERT_WEBHOOK_URL }}"
+```
+
+#### Configuration
+
+```powershell
+# 1. Créer un Incoming Webhook Slack pour #alerting
+#    api.slack.com/apps → Incoming Webhooks → Add New Webhook → #alerting → copier l'URL
+
+# 2. Ajouter dans .env
+SLACK_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
+
+# 3. Redémarrer Kestra pour charger la variable
+docker compose -f docker/docker-compose.kestra.yml down
+docker compose -f docker/docker-compose.kestra.yml up -d
+```
+
+> `#social` = notifications d'activités sportives en temps réel (Flask → `SLACK_WEBHOOK_URL`)
+> `#alerting` = erreurs pipeline Kestra (Kestra → `SLACK_ALERT_WEBHOOK_URL`)
+
+### 13.2 Stratégie de retry
+
+Chaque tâche HTTP sensible dispose d'une politique de retry avant de déclencher l'alerte.
+
+| Flow | Tâche | Type | Tentatives | Intervalle |
+|------|-------|------|------------|------------|
+| Tous | `health_check` | `constant` | 3 | 10 s |
+| 01 `ingest_xlsx` | `run_ingest` | `exponential` | 2 | 30 s → 120 s |
+| 02 `generate_strava` | `run_generate` | `constant` | 1 | 60 s |
+| 03 `etl_silver_gold` | `run_etl` | `exponential` | 2 | 60 s → 180 s |
+| 04 `quality_check` | `run_quality` | `constant` | 2 | 20 s |
+| 05 `notify_slack` | `run_notify` | `constant` | 2 | 30 s |
+
+**Pourquoi exponential sur ETL et ingest ?** Ces opérations sont longues (ETL ≥ 30 s, ingest avec Google Maps jusqu'à 5 min). Un retry immédiat ferait double TRUNCATE sur une table en cours d'écriture. L'intervalle croissant laisse le temps à Flask/PostgreSQL de se stabiliser.
+
+**Pourquoi constant sur quality et notify ?** Ces opérations sont idempotentes et rapides — un délai fixe court suffit pour absorber une micro-interruption réseau.
+
+### 13.3 Monitoring — Dashboard Kestra
+
+Kestra OSS fournit un dashboard natif sans configuration supplémentaire.
+
+#### Filtres utiles dans l'UI (http://localhost:8080)
+
+| Vue | Chemin | Usage |
+|-----|--------|-------|
+| Toutes les exécutions | **Executions** | Historique complet, statut coloré (vert/rouge) |
+| Flows critiques uniquement | **Executions** → filtrer label `criticality: high` | Flows 00, 01, 03, 04 |
+| Logs d'une exécution | Clic sur une exécution → onglet **Logs** | Voir `log_start` / `log_result` / erreurs |
+| Dernières exécutions par flow | **Flows** → clic sur un flow → **Executions** | Suivi d'un flow spécifique |
+
+#### Labels définis sur les flows
+
+| Label | Valeur | Flows concernés |
+|-------|--------|-----------------|
+| `criticality` | `high` | 00, 01, 03, 04 |
+| `criticality` | `low` | 02, 05 |
+| `alerting` | `slack` | Tous (6 flows) |
+
+#### Logs structurés
+
+Chaque flow émet trois niveaux de log utilisables comme jalon dans le dashboard :
+
+```
+▶ DÉBUT <flow_id> | exec=<execution_id>       ← toujours présent (INFO)
+✅ <flow_id> terminé | exec=… | résultat=…    ← succès (INFO)
+❌ ÉCHEC <flow_id> | exec=… | <cause>         ← échec (ERROR) — déclenche l'alerte
+```
+
+L'`execution.id` dans chaque message permet de corréler les logs Kestra avec les entrées de `pipeline_runs` en PostgreSQL.
+
+### 13.4 Récapitulatif des tests automatisés
+
+```powershell
+# Lancer toute la suite (PostgreSQL et Flask doivent être démarrés)
+pytest tests/ -v
+
+# Par round
+pytest tests/test_round1.py -v   # 11 tests
+pytest tests/test_round2.py -v   # 49 tests
+pytest tests/test_round3.py -v   # ~46 tests
+pytest tests/test_round4.py -v   # 31 tests
+pytest tests/test_round5.py -v   # ~35 tests
+```
+
+| Round | Fichier | Tests | Ce que la suite couvre |
+|-------|---------|-------|------------------------|
+| **R1** | `test_round1.py` | **11** | Connexion PostgreSQL, 9 tables, générateur Monte Carlo (distances, durées, dates), Delta Lake Bronze lisible par DuckDB |
+| **R2** | `test_round2.py` | **49** | Normalisation IDs/dates/salaires/modes/sports, règles d'éligibilité, Google Maps mock (déterministe), ingestion dry-run, Silver DB, Delta Lake Silver |
+| **R3** | `test_round3.py` | **~46** | ETL Gold (formule prime, journées BE, dry-run), Quality Check SQL v1 (9 règles, rapport HTML), avantages_calcules (161 lignes, 68 éligibles), Delta Lake Gold, fichiers SodaCL présents et valides, `soda_runner` (`SEVERITY_MAP`, config dynamique) |
+| **R4** | `test_round4.py` | **31** | Slack Block Kit formatter, endpoints Flask (`/health`, `/`, `/api/stats`, `/api/activity`, `/api/ingest`, `/api/notify`), 6 flows YAML Kestra présents et valides |
+| **R5** | `test_round5.py` | **~35** | Export CSV/Excel (7 datasets, encodage UTF-8 BOM), cohérence end-to-end R1→R4, Delta Lake 3 couches (Bronze/Silver/Gold) lisibles, fichiers infrastructure (docker-compose, SQL PBI) |
+| **Total** | | **~172** | Pipeline complet de bout en bout |
+
+> **Prérequis pour tous les tests** : container `poc_postgres` actif (`docker ps`). Les tests Round 4 nécessitent Flask démarré. Les tests Round 3 SODA (`TestFichiersSoda`, `TestSodaRunner`) ne nécessitent pas de connexion DB — ils s'exécutent en isolation complète.

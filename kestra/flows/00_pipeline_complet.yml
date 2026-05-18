@@ -9,7 +9,7 @@
 #
 # Orchestre les 5 flows dans l'ordre logique :
 #   01 ingest → 02 generate → 03 etl → 04 quality → 05 notify
-# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Alerting : canal Slack #alerting sur échec (envs.SLACK_ALERT_WEBHOOK_URL)
 # Retry : health_check 3×/10 s
 # =============================================================
 id: pipeline_complet
