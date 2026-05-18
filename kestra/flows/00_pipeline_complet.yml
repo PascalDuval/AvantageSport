@@ -1,4 +1,4 @@
-﻿# =============================================================
+# =============================================================
 # Flow Kestra 00 — Pipeline Complet (correction Round 5)
 # Namespace : poc.avantages_sportifs
 # Déclenche : manuellement (démo / restitution)
@@ -9,6 +9,8 @@
 #
 # Orchestre les 5 flows dans l'ordre logique :
 #   01 ingest → 02 generate → 03 etl → 04 quality → 05 notify
+# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Retry : health_check 3×/10 s
 # =============================================================
 id: pipeline_complet
 namespace: poc.avantages_sportifs
@@ -16,6 +18,8 @@ namespace: poc.avantages_sportifs
 labels:
   round: "4-5"
   type: orchestration
+  criticality: high
+  alerting: slack
 
 description: |
   Flow maître : orchestre les 5 flows du pipeline dans l'ordre.
@@ -34,11 +38,20 @@ inputs:
 
 tasks:
 
+  - id: log_start
+    type: io.kestra.plugin.core.log.Log
+    level: INFO
+    message: "▶ DÉBUT pipeline_complet | exec={{ execution.id }}"
+
   - id: health_check
     type: io.kestra.plugin.core.http.Request
     uri: "http://host.docker.internal:5001/health"
     method: GET
     description: "Vérifier que Flask Entry est accessible avant de démarrer"
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempt: 3
 
   - id: step_01_ingest
     type: io.kestra.plugin.core.flow.Subflow
@@ -70,7 +83,7 @@ tasks:
     flowId: quality_check
     wait: true
     transmitFailed: false
-    description: "Étape 4 : Quality Check v1 — 9 règles SQL (référence)"
+    description: "Étape 4 : Quality Check SODA — 11 règles SodaCL"
 
   - id: step_05_notify
     type: io.kestra.plugin.core.flow.Subflow
@@ -78,17 +91,24 @@ tasks:
     flowId: notify_slack
     wait: true
     transmitFailed: false
-    description: "Étape 5 : notifications Slack (activités manuelles récentes)"
+    description: "Étape 5 : notifications Slack #social (activités manuelles récentes)"
 
   - id: log_completion
     type: io.kestra.plugin.core.log.Log
-    message: "Pipeline complet terminé — stats: http://localhost:5001/api/stats · rapport SODA: reports/soda_quality_report.html"
+    level: INFO
+    message: "✅ pipeline_complet terminé | exec={{ execution.id }} | stats=http://localhost:5001/api/stats | rapport=reports/soda_quality_report.html"
 
 errors:
-  - id: on_pipeline_failure
+
+  - id: log_failure
+    type: io.kestra.plugin.core.log.Log
+    level: ERROR
+    message: "❌ ÉCHEC pipeline_complet | exec={{ execution.id }} | Vérifiez l'exécution dans Kestra UI"
+
+  - id: slack_alert
     type: io.kestra.plugin.core.http.Request
-    uri: "http://host.docker.internal:5001/api/notify"
+    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
     method: POST
     contentType: application/json
-    body: '{"dry_run": false, "since_minutes": 5}'
-    description: "Tente quand même d'envoyer les notifications Slack en cas d'erreur amont"
+    body: |
+      {"text":"🚨 *[ALERTE POC]* Flow `{{ flow.id }}` en échec","blocks":[{"type":"header","text":{"type":"plain_text","text":"🚨 Alerte Pipeline — POC Avantages Sportifs","emoji":true}},{"type":"section","fields":[{"type":"mrkdwn","text":"*Flow :*\n`{{ flow.id }}`"},{"type":"mrkdwn","text":"*Exécution :*\n`{{ execution.id }}`"},{"type":"mrkdwn","text":"*Statut :*\n❌  ÉCHEC"},{"type":"mrkdwn","text":"*Cause :*\nPipeline complet interrompu — une étape critique a échoué"}]},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"🔍 Voir dans Kestra","emoji":true},"url":"http://localhost:8080/ui/executions/{{ flow.namespace }}/{{ flow.id }}/{{ execution.id }}"}]}]}

@@ -1,21 +1,24 @@
-﻿# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 05 — Notifications Slack
 # Namespace : poc.avantages_sportifs
 # Schedule  : */5 * * * *  (toutes les 5 minutes)
 # Déclenche : automatiquement ou après une saisie Flask
 #
-# Action : poll les nouvelles activités manuelles → webhook Slack
-#          Source filtrée : strava_activities.source = 'manual'
+# Action : poll les nouvelles activités manuelles → webhook Slack #social
+# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Retry : health_check 2×/15 s · run_notify 2×/30 s
 # ═══════════════════════════════════════════════════════════════
 id: notify_slack
 namespace: poc.avantages_sportifs
 
 labels:
   round: "4"
+  criticality: low
+  alerting: slack
 
 description: |
   Polling de strava_activities pour les activités 'manual' récentes.
-  Envoie un message Slack riche pour chaque nouvelle activité.
+  Envoie un message Slack riche (#social) pour chaque nouvelle activité.
   Typiquement déclenché après une saisie dans Flask (demo live).
 
 triggers:
@@ -35,10 +38,19 @@ inputs:
 
 tasks:
 
+  - id: log_start
+    type: io.kestra.plugin.core.log.Log
+    level: INFO
+    message: "▶ DÉBUT notify_slack | exec={{ execution.id }}"
+
   - id: health_check
     type: io.kestra.plugin.core.http.Request
     uri: "http://host.docker.internal:5001/health"
     method: GET
+    retry:
+      type: constant
+      interval: PT15S
+      maxAttempt: 2
 
   - id: run_notify
     type: io.kestra.plugin.core.http.Request
@@ -46,14 +58,28 @@ tasks:
     method: POST
     contentType: application/json
     body: '{"since_minutes": 6, "dry_run": false}'
-    description: "Poll strava_activities.source='manual' → webhook Slack"
+    description: "Poll strava_activities.source='manual' → webhook Slack #social"
+    retry:
+      type: constant
+      interval: PT30S
+      maxAttempt: 2
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log
-    message: "Slack notifier terminé : {{ outputs.run_notify.body }}"
+    level: INFO
+    message: "✅ notify_slack terminé | exec={{ execution.id }} | résultat={{ outputs.run_notify.body }}"
 
 errors:
-  - id: on_failure
+
+  - id: log_failure
     type: io.kestra.plugin.core.log.Log
-    level: WARNING
-    message: "Slack notifier KO — vérifier SLACK_WEBHOOK_URL dans .env"
+    level: WARN
+    message: "⚠️ ÉCHEC notify_slack | exec={{ execution.id }} | vérifier SLACK_WEBHOOK_URL dans .env et Flask :5001"
+
+  - id: slack_alert
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    method: POST
+    contentType: application/json
+    body: |
+      {"text":"⚠️ *[ALERTE POC]* Flow `{{ flow.id }}` en échec","blocks":[{"type":"header","text":{"type":"plain_text","text":"⚠️ Alerte Pipeline — POC Avantages Sportifs","emoji":true}},{"type":"section","fields":[{"type":"mrkdwn","text":"*Flow :*\n`{{ flow.id }}`"},{"type":"mrkdwn","text":"*Exécution :*\n`{{ execution.id }}`"},{"type":"mrkdwn","text":"*Sévérité :*\n⚠️  WARNING"},{"type":"mrkdwn","text":"*Cause :*\nNotifier Slack KO — activités manuelles non diffusées"}]},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"🔍 Voir dans Kestra","emoji":true},"url":"http://localhost:8080/ui/executions/{{ flow.namespace }}/{{ flow.id }}/{{ execution.id }}"}]}]}

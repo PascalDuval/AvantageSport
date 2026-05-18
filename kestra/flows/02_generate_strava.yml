@@ -1,16 +1,19 @@
-﻿# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 02 — Générateur Strava-like
 # Namespace : poc.avantages_sportifs
 # Déclenche : manuellement (régénération si besoin)
 #
-# Action : appelle POST /api/generate
-#          → src/generate_strava.py → strava_activities
+# Action : appelle POST /api/generate → strava_activities
+# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Retry : health_check 3×/10 s · run_generate 1×/60 s
 # ═══════════════════════════════════════════════════════════════
 id: generate_strava
 namespace: poc.avantages_sportifs
 
 labels:
   round: "4"
+  criticality: low
+  alerting: slack
 
 description: |
   Lance la simulation Monte Carlo Strava-like.
@@ -24,10 +27,19 @@ inputs:
 
 tasks:
 
+  - id: log_start
+    type: io.kestra.plugin.core.log.Log
+    level: INFO
+    message: "▶ DÉBUT generate_strava | exec={{ execution.id }}"
+
   - id: health_check
     type: io.kestra.plugin.core.http.Request
     uri: "http://host.docker.internal:5001/health"
     method: GET
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempt: 3
 
   - id: run_generate
     type: io.kestra.plugin.core.http.Request
@@ -35,14 +47,29 @@ tasks:
     method: POST
     contentType: application/json
     body: '{"dry_run": false}'
-    description: "Lance src/generate_strava.py (Monte Carlo, seed configurable)"
+    description: "Lance src/generate_strava.py (Monte Carlo, 2 905 activités)"
+    timeout: PT300S
+    retry:
+      type: constant
+      interval: PT60S
+      maxAttempt: 1
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log
-    message: "Génération terminée. Réponse : {{ outputs.run_generate.body }}"
+    level: INFO
+    message: "✅ generate_strava terminé | exec={{ execution.id }} | résultat={{ outputs.run_generate.body }}"
 
 errors:
-  - id: on_failure
+
+  - id: log_failure
     type: io.kestra.plugin.core.log.Log
     level: ERROR
-    message: "ECHEC generate_strava — Vérifiez que Flask est démarré sur :5001"
+    message: "❌ ÉCHEC generate_strava | exec={{ execution.id }} | Vérifiez Flask :5001"
+
+  - id: slack_alert
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    method: POST
+    contentType: application/json
+    body: |
+      {"text":"🚨 *[ALERTE POC]* Flow `{{ flow.id }}` en échec","blocks":[{"type":"header","text":{"type":"plain_text","text":"🚨 Alerte Pipeline — POC Avantages Sportifs","emoji":true}},{"type":"section","fields":[{"type":"mrkdwn","text":"*Flow :*\n`{{ flow.id }}`"},{"type":"mrkdwn","text":"*Exécution :*\n`{{ execution.id }}`"},{"type":"mrkdwn","text":"*Statut :*\n❌  ÉCHEC"},{"type":"mrkdwn","text":"*Cause :*\nGénérateur Monte Carlo — Flask ou timeout"}]},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"🔍 Voir dans Kestra","emoji":true},"url":"http://localhost:8080/ui/executions/{{ flow.namespace }}/{{ flow.id }}/{{ execution.id }}"}]}]}

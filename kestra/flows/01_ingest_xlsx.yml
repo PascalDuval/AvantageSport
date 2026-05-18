@@ -1,10 +1,11 @@
-﻿# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 01 — Ingestion XLSX
 # Namespace : poc.avantages_sportifs
-# Déclenche : manuellement ou depuis un flow parent
+# Déclenche : manuellement ou depuis pipeline_complet
 #
-# Action : appelle POST /api/ingest sur le Flask Entry local
-#          → src/ingest_xlsx.py → raw_rh + raw_sport PostgreSQL
+# Action : appelle POST /api/ingest → raw_rh + raw_sport
+# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Retry : health_check 3×/10 s · run_ingest 2×/30 s
 # ═══════════════════════════════════════════════════════════════
 id: ingest_xlsx
 namespace: poc.avantages_sportifs
@@ -12,6 +13,8 @@ namespace: poc.avantages_sportifs
 labels:
   round: "4"
   equipe: poc-sport
+  criticality: high
+  alerting: slack
 
 description: |
   Charge les fichiers XLSX (Données RH et Sportives) dans les tables
@@ -26,11 +29,20 @@ inputs:
 
 tasks:
 
+  - id: log_start
+    type: io.kestra.plugin.core.log.Log
+    level: INFO
+    message: "▶ DÉBUT ingest_xlsx | exec={{ execution.id }}"
+
   - id: health_check
     type: io.kestra.plugin.core.http.Request
     uri: "http://host.docker.internal:5001/health"
     method: GET
     description: "Vérifie que Flask Entry est disponible"
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempt: 3
 
   - id: run_ingest
     type: io.kestra.plugin.core.http.Request
@@ -39,13 +51,29 @@ tasks:
     contentType: application/json
     body: '{"dry_run": false}'
     description: "Lance src/ingest_xlsx.py"
+    retry:
+      type: exponential
+      interval: PT30S
+      maxInterval: PT120S
+      maxAttempt: 2
+      multiplier: 2.0
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log
-    message: "Ingestion terminée. Réponse API : {{ outputs.run_ingest.body }}"
+    level: INFO
+    message: "✅ ingest_xlsx terminé | exec={{ execution.id }} | résultat={{ outputs.run_ingest.body }}"
 
 errors:
-  - id: on_failure
+
+  - id: log_failure
     type: io.kestra.plugin.core.log.Log
     level: ERROR
-    message: "ECHEC ingest_xlsx — Vérifiez que Flask est démarré sur :5001"
+    message: "❌ ÉCHEC ingest_xlsx | exec={{ execution.id }} | Vérifiez Flask :5001 et les XLSX dans data/raw/"
+
+  - id: slack_alert
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    method: POST
+    contentType: application/json
+    body: |
+      {"text":"🚨 *[ALERTE POC]* Flow `{{ flow.id }}` en échec","blocks":[{"type":"header","text":{"type":"plain_text","text":"🚨 Alerte Pipeline — POC Avantages Sportifs","emoji":true}},{"type":"section","fields":[{"type":"mrkdwn","text":"*Flow :*\n`{{ flow.id }}`"},{"type":"mrkdwn","text":"*Exécution :*\n`{{ execution.id }}`"},{"type":"mrkdwn","text":"*Statut :*\n❌  ÉCHEC"},{"type":"mrkdwn","text":"*Cause :*\nIngestion XLSX — Flask ou fichiers XLSX manquants"}]},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"🔍 Voir dans Kestra","emoji":true},"url":"http://localhost:8080/ui/executions/{{ flow.namespace }}/{{ flow.id }}/{{ execution.id }}"}]}]}

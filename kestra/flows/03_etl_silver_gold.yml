@@ -1,4 +1,4 @@
-﻿# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # Flow Kestra 03 — ETL Silver + Gold
 # Namespace : poc.avantages_sportifs
 # Schedule  : 0 6 * * *  (tous les jours à 6h)
@@ -7,18 +7,22 @@
 # Étapes :
 #   1. ETL Silver (src/etl_silver.py) → employees normalisés
 #   2. ETL Gold   (src/etl_gold.py)  → avantages_calcules
-#   3. Log dans pipeline_runs
+# Alerting : canal Slack #alerting sur échec (vars.SLACK_ALERT_WEBHOOK_URL)
+# Retry : health_check 3×/10 s · run_etl 2×/60 s (opération longue)
 # ═══════════════════════════════════════════════════════════════
 id: etl_silver_gold
 namespace: poc.avantages_sportifs
 
 labels:
   round: "4"
+  criticality: high
+  alerting: slack
 
 description: |
   Pipeline ETL complet :
   raw_rh + raw_sport → employees (Silver) → avantages_calcules (Gold)
   Lance les deux scripts séquentiellement via l'API Flask.
+  Scheduleé quotidiennement à 6h — critique pour la fraîcheur des données.
 
 triggers:
   - id: daily_schedule
@@ -37,10 +41,19 @@ inputs:
 
 tasks:
 
+  - id: log_start
+    type: io.kestra.plugin.core.log.Log
+    level: INFO
+    message: "▶ DÉBUT etl_silver_gold | exec={{ execution.id }}"
+
   - id: health_check
     type: io.kestra.plugin.core.http.Request
     uri: "http://host.docker.internal:5001/health"
     method: GET
+    retry:
+      type: constant
+      interval: PT10S
+      maxAttempt: 3
 
   - id: run_etl
     type: io.kestra.plugin.core.http.Request
@@ -50,13 +63,29 @@ tasks:
     body: '{"dry_run": false, "skip_gmaps": false}'
     description: "ETL Silver (normalisation + distances) + Gold (primes + BE)"
     timeout: PT300S
+    retry:
+      type: exponential
+      interval: PT60S
+      maxInterval: PT180S
+      maxAttempt: 2
+      multiplier: 2.0
 
   - id: log_result
     type: io.kestra.plugin.core.log.Log
-    message: "ETL terminé. Réponse : {{ outputs.run_etl.body }}"
+    level: INFO
+    message: "✅ etl_silver_gold terminé | exec={{ execution.id }} | résultat={{ outputs.run_etl.body }}"
 
 errors:
-  - id: on_failure
+
+  - id: log_failure
     type: io.kestra.plugin.core.log.Log
     level: ERROR
-    message: "ECHEC etl_silver_gold — Voir logs Flask et pipeline_runs"
+    message: "❌ ÉCHEC etl_silver_gold | exec={{ execution.id }} | Vérifiez Flask :5001 et pipeline_runs"
+
+  - id: slack_alert
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.SLACK_ALERT_WEBHOOK_URL }}"
+    method: POST
+    contentType: application/json
+    body: |
+      {"text":"🚨 *[ALERTE POC]* Flow `{{ flow.id }}` en échec","blocks":[{"type":"header","text":{"type":"plain_text","text":"🚨 Alerte Pipeline — POC Avantages Sportifs","emoji":true}},{"type":"section","fields":[{"type":"mrkdwn","text":"*Flow :*\n`{{ flow.id }}`"},{"type":"mrkdwn","text":"*Exécution :*\n`{{ execution.id }}`"},{"type":"mrkdwn","text":"*Statut :*\n❌  ÉCHEC"},{"type":"mrkdwn","text":"*Cause :*\nETL Silver+Gold échoué — données Gold potentiellement périmées"}]},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"🔍 Voir dans Kestra","emoji":true},"url":"http://localhost:8080/ui/executions/{{ flow.namespace }}/{{ flow.id }}/{{ execution.id }}"}]}]}
