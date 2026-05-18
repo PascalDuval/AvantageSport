@@ -1,9 +1,10 @@
 """
-Tests Round 5 — Export Power BI + Intégration end-to-end R1→R4
+Tests Round 5 — Export Tableau + Intégration end-to-end R1→R4
 
 Couvre :
-  - Export CSV (un fichier par page Power BI)
-  - Export Excel multi-onglets
+  - Export CSV v1 (un fichier par feuille Tableau, UTF-8 BOM)
+  - Export Excel v1 (classeur multi-onglets)
+  - Export Hyper v2 (extract natif Tableau via tableauhyperapi — skippé si absent)
   - Cohérence des données entre tous les rounds
   - Présence des fichiers Delta Lake (Bronze + Silver + Gold)
   - Présence et validité du docker-compose.kestra.yml
@@ -42,8 +43,8 @@ def engine():
 
 @pytest.fixture(scope="module")
 def tmp_export(tmp_path_factory):
-    """Dossier temporaire pour les exports CSV/Excel."""
-    return tmp_path_factory.mktemp("pbi_export")
+    """Dossier temporaire pour les exports CSV/Excel/Hyper."""
+    return tmp_path_factory.mktemp("tableau_export")
 
 
 def _skip_if_empty(db_conn, table: str, min_rows: int = 1) -> None:
@@ -55,7 +56,7 @@ def _skip_if_empty(db_conn, table: str, min_rows: int = 1) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════
-# Tests export Power BI — CSV
+# Tests export Tableau — CSV (v1)
 # ══════════════════════════════════════════════════════════════════
 
 class TestExportCSV:
@@ -63,17 +64,17 @@ class TestExportCSV:
     def test_export_csv_creates_files(self, db_conn, tmp_export):
         """L'export CSV doit créer 7 fichiers dans le dossier de destination."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         results = export_to_csv(tmp_export)
         assert len(results) >= 5, f"Attendu ≥ 5 fichiers, obtenu {len(results)}"
-        for name, nb_rows in results.items():
+        for name in results:
             path = tmp_export / f"{name}.csv"
             assert path.exists(), f"Fichier {name}.csv non créé"
 
     def test_csv_vue_globale_has_bu(self, db_conn, tmp_export):
         """vue_globale.csv doit avoir une ligne par BU."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "vue_globale.csv")
@@ -84,7 +85,7 @@ class TestExportCSV:
     def test_csv_primes_count(self, db_conn, tmp_export):
         """primes_sportives.csv doit avoir 161 lignes (un par salarié)."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "primes_sportives.csv")
@@ -95,7 +96,7 @@ class TestExportCSV:
     def test_csv_primes_nb_eligibles(self, db_conn, tmp_export):
         """Exactement 68 salariés doivent être éligibles à la prime."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "primes_sportives.csv")
@@ -105,7 +106,7 @@ class TestExportCSV:
     def test_csv_cout_primes_plausible(self, db_conn, tmp_export):
         """Le coût total des primes doit être proche de 106 427 €."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "primes_sportives.csv")
@@ -115,7 +116,7 @@ class TestExportCSV:
     def test_csv_activites_has_monthly_data(self, db_conn, tmp_export):
         """activites_sportives.csv doit avoir des données pour plusieurs mois."""
         _skip_if_empty(db_conn, "strava_activities", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "activites_sportives.csv")
@@ -126,7 +127,7 @@ class TestExportCSV:
     def test_csv_journees_be_seuil(self, db_conn, tmp_export):
         """journees_bienetre.csv : les éligibles BE ont nb_activites >= 15."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "journees_bienetre.csv")
@@ -135,21 +136,21 @@ class TestExportCSV:
             assert (eligibles["nb_activites_12m"] >= 15).all(), \
                 "Des éligibles BE ont moins de 15 activités"
 
-    def test_csv_anomalies_has_9_rules(self, db_conn, tmp_export):
-        """anomalies_qualite.csv doit couvrir les 9 règles qualité."""
+    def test_csv_anomalies_has_rules(self, db_conn, tmp_export):
+        """anomalies_qualite.csv doit couvrir les règles qualité (≥ 9, jusqu'à 11 avec SODA)."""
         _skip_if_empty(db_conn, "data_quality_results", 9)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "anomalies_qualite.csv")
         last_run = df[df["dernier_run"] == True]
-        assert len(last_run) == 9, \
-            f"Attendu 9 règles dans le dernier run, obtenu {len(last_run)}"
+        assert len(last_run) >= 9, \
+            f"Attendu ≥ 9 règles dans le dernier run, obtenu {len(last_run)}"
 
     def test_csv_config_has_taux_prime(self, db_conn, tmp_export):
         """config_params.csv doit contenir la clé taux_prime."""
         _skip_if_empty(db_conn, "config", 5)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         import pandas as pd
         df = pd.read_csv(tmp_export / "config_params.csv")
@@ -160,7 +161,7 @@ class TestExportCSV:
     def test_csv_utf8_bom_encoding(self, db_conn, tmp_export):
         """Les CSV doivent être encodés en UTF-8 BOM pour Excel Windows."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_csv
+        from export_tableau import export_to_csv
         export_to_csv(tmp_export)
         path = tmp_export / "primes_sportives.csv"
         raw = path.read_bytes()
@@ -168,7 +169,7 @@ class TestExportCSV:
 
 
 # ══════════════════════════════════════════════════════════════════
-# Tests export Excel
+# Tests export Excel (v1)
 # ══════════════════════════════════════════════════════════════════
 
 class TestExportExcel:
@@ -176,7 +177,7 @@ class TestExportExcel:
     def test_export_excel_creates_file(self, db_conn, tmp_export):
         """L'export Excel doit créer un fichier .xlsx."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_excel
+        from export_tableau import export_to_excel
         path = export_to_excel(tmp_export)
         assert path.exists()
         assert path.suffix == ".xlsx"
@@ -184,7 +185,7 @@ class TestExportExcel:
     def test_excel_has_expected_sheets(self, db_conn, tmp_export):
         """Le classeur Excel doit avoir au moins 5 onglets."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_excel
+        from export_tableau import export_to_excel
         import pandas as pd
         path = export_to_excel(tmp_export)
         xl = pd.ExcelFile(path)
@@ -194,15 +195,58 @@ class TestExportExcel:
     def test_excel_primes_sheet_correct(self, db_conn, tmp_export):
         """L'onglet Primes doit avoir 161 lignes."""
         _skip_if_empty(db_conn, "avantages_calcules", 100)
-        from export_power_bi import export_to_excel
+        from export_tableau import export_to_excel
         import pandas as pd
         path = export_to_excel(tmp_export)
         xl = pd.ExcelFile(path)
-        # Chercher l'onglet primes (nom partiel)
         primes_sheet = next((s for s in xl.sheet_names if "Prime" in s or "prime" in s), None)
         if primes_sheet:
             df = pd.read_excel(path, sheet_name=primes_sheet)
             assert len(df) == 161
+
+
+# ══════════════════════════════════════════════════════════════════
+# Tests export Hyper (v2 — optionnel si tableauhyperapi absent)
+# ══════════════════════════════════════════════════════════════════
+
+class TestExportHyper:
+
+    def test_hyper_available_or_skip(self):
+        """tableauhyperapi doit être installé pour les tests Hyper (pip install tableauhyperapi)."""
+        try:
+            import tableauhyperapi  # noqa: F401
+        except ImportError:
+            pytest.skip("tableauhyperapi non installé — tests Hyper ignorés")
+
+    def test_export_hyper_creates_file(self, db_conn, tmp_export):
+        """L'export Hyper doit créer un fichier .hyper."""
+        try:
+            import tableauhyperapi  # noqa: F401
+        except ImportError:
+            pytest.skip("tableauhyperapi non installé")
+        _skip_if_empty(db_conn, "avantages_calcules", 100)
+        from export_tableau import export_to_hyper
+        path = export_to_hyper(tmp_export)
+        assert path.exists()
+        assert path.suffix == ".hyper"
+        assert path.stat().st_size > 0
+
+    def test_hyper_file_readable(self, db_conn, tmp_export):
+        """Le fichier .hyper doit être lisible et contenir les tables attendues."""
+        try:
+            from tableauhyperapi import HyperProcess, Telemetry, Connection
+        except ImportError:
+            pytest.skip("tableauhyperapi non installé")
+        _skip_if_empty(db_conn, "avantages_calcules", 100)
+        from export_tableau import export_to_hyper
+        hyper_path = export_to_hyper(tmp_export)
+        with HyperProcess(telemetry=Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU) as hyper:
+            with Connection(endpoint=hyper.endpoint, database=hyper_path) as connection:
+                tables = connection.catalog.get_table_names(schema="Extract")
+                table_names = [str(t.name) for t in tables]
+        assert "primes_sportives" in table_names, \
+            f"Table 'primes_sportives' absente du fichier Hyper. Tables : {table_names}"
+        assert len(table_names) >= 5, f"Attendu ≥ 5 tables dans le .hyper, obtenu {len(table_names)}"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -295,8 +339,8 @@ class TestEndToEndCohérence:
         assert 50000 <= cout <= 300000, \
             f"Coût total hors plage plausible : {cout:.2f} €"
 
-    def test_r3_9_regles_qc(self, db_conn):
-        """R3 : le dernier run QC doit avoir exactement 9 règles."""
+    def test_r3_regles_qc(self, db_conn):
+        """R3 : le dernier run QC doit avoir ≥ 9 règles (11 avec SODA Core)."""
         _skip_if_empty(db_conn, "data_quality_results", 9)
         with db_conn.cursor() as cur:
             cur.execute("""
@@ -304,7 +348,7 @@ class TestEndToEndCohérence:
                 WHERE run_at = (SELECT MAX(run_at) FROM data_quality_results)
             """)
             nb = cur.fetchone()[0]
-        assert nb == 9, f"Attendu 9 règles QC dans le dernier run, obtenu {nb}"
+        assert nb >= 9, f"Attendu ≥ 9 règles QC dans le dernier run, obtenu {nb}"
 
     def test_r3_no_bloquant_failed(self, db_conn):
         """R3 : aucune règle BLOQUANTE ne doit avoir échoué (dernier run)."""
@@ -432,37 +476,37 @@ class TestFichiersInfrastructure:
         assert len(usages) == 0, \
             "Ancienne référence io.kestra.plugin.flow.Subflow utilisée comme type (hors commentaires)"
 
-    def test_flow_00_has_6_subflows(self):
+    def test_flow_00_has_5_subflows(self):
         """Flow 00 doit orchestrer exactement 5 sous-flows (01→05)."""
         content = Path("kestra/flows/00_pipeline_complet.yml").read_text(encoding="utf-8")
         import re
         subflows = re.findall(r"flowId:\s*(ingest_xlsx|generate_strava|etl_silver_gold|quality_check|notify_slack)", content)
         assert len(subflows) == 5, f"Attendu 5 sous-flows, trouvé {len(subflows)}: {subflows}"
 
-    def test_power_bi_queries_sql_exists(self):
-        """sql/power_bi_queries.sql doit exister."""
-        assert Path("sql/power_bi_queries.sql").exists(), \
-            "sql/power_bi_queries.sql absent"
+    def test_tableau_queries_sql_exists(self):
+        """sql/tableau_queries.sql doit exister."""
+        assert Path("sql/tableau_queries.sql").exists(), \
+            "sql/tableau_queries.sql absent"
 
-    def test_power_bi_queries_has_5_sections(self):
-        """Le fichier SQL Power BI doit couvrir les 5 pages."""
-        content = Path("sql/power_bi_queries.sql").read_text(encoding="utf-8")
+    def test_tableau_queries_has_5_sections(self):
+        """Le fichier SQL Tableau doit couvrir les 5 feuilles."""
+        content = Path("sql/tableau_queries.sql").read_text(encoding="utf-8")
         pages = ["Vue Globale", "Primes Sportives", "Journées Bien", "Activités", "Anomalies"]
         for page in pages:
-            assert page in content, f"Section '{page}' absente de power_bi_queries.sql"
+            assert page in content, f"Section '{page}' absente de tableau_queries.sql"
 
-    def test_dax_measures_exists(self):
-        """reports/dax_measures.md doit exister."""
-        assert Path("reports/dax_measures.md").exists(), \
-            "reports/dax_measures.md absent"
+    def test_tableau_calcs_exists(self):
+        """reports/tableau_calcs.md doit exister."""
+        assert Path("reports/tableau_calcs.md").exists(), \
+            "reports/tableau_calcs.md absent"
 
-    def test_dax_measures_has_key_measures(self):
-        """Le fichier DAX doit contenir les mesures clés."""
-        content = Path("reports/dax_measures.md").read_text(encoding="utf-8")
+    def test_tableau_calcs_has_key_measures(self):
+        """Le fichier de champs calculés Tableau doit contenir les mesures clés."""
+        content = Path("reports/tableau_calcs.md").read_text(encoding="utf-8")
         measures = [
             "Nb Éligibles Prime",
             "Coût Total Primes",
             "Total Jours BE Accordés",
         ]
         for m in measures:
-            assert m in content, f"Mesure DAX '{m}' absente de dax_measures.md"
+            assert m in content, f"Mesure '{m}' absente de reports/tableau_calcs.md"

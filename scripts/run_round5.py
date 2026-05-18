@@ -1,20 +1,21 @@
 """
 Script de clôture — Round 5
 
-Validation end-to-end du pipeline complet R1→R4 et export Power BI.
+Validation end-to-end du pipeline complet R1→R4 et export Tableau.
 
 Étapes :
   1. Vérification de l'infrastructure (PostgreSQL, Flask, Kestra)
   2. Contrôle des données de tous les rounds
-  3. Lancement de l'export Power BI (CSV + Excel)
+  3. Lancement de l'export Tableau (CSV v1 ou Hyper v2)
   4. Rapport de synthèse final
   5. Instructions de démo live
 
 Usage:
     python scripts/run_round5.py
-    python scripts/run_round5.py --export-only          # seulement export PBI
-    python scripts/run_round5.py --format excel         # export Excel
-    python scripts/run_round5.py --full-pipeline-check  # relance tout R1→R4
+    python scripts/run_round5.py --export-only           # seulement export
+    python scripts/run_round5.py --format excel          # export Excel (v1)
+    python scripts/run_round5.py --format hyper          # export Hyper (v2)
+    python scripts/run_round5.py --full-pipeline-check   # relance tout R1→R4
 """
 import argparse
 import logging
@@ -212,15 +213,17 @@ def print_demo_script() -> None:
      "3 couches : Bronze brut / Silver normalisé / Gold calculé"
      "Sans Spark, sans JVM, sans S3 — delta-rs + DuckDB"
 
-  5. POWER BI (1 min)
-     Ouvrir Power BI Desktop
-     → reports/power_bi/ ou connexion ODBC PostgreSQL
-     Page Vue Globale → KPI coût total + % éligibles
-     Slicer BU : filtrer sur un département
-     Modifier taux dans config → UPDATE + re-export → refresh PBI
+  5. TABLEAU (1 min)
+     Ouvrir Tableau Desktop
+     → Connexion PostgreSQL (localhost:5432/poc_sport)
+       ou ouvrir reports/tableau/*.hyper (après export_tableau.py --format hyper)
+     Feuille Vue Globale → KPI coût total + % éligibles
+     Filtre BU : filtrer sur un département
+     Paramètre "Taux Prime Simulation" → curseur → recalcul immédiat
 
   COMMANDES DE SECOURS :
-     python src/export_power_bi.py               # re-export CSV
+     python src/export_tableau.py                # re-export CSV (v1)
+     python src/export_tableau.py --format hyper # re-export Hyper (v2)
      python scripts/run_round3.py --dry-run      # vérif Gold
      curl http://localhost:{FLASK_PORT}/api/stats          # KPI JSON
 """)
@@ -251,11 +254,11 @@ def run_all_tests() -> None:
 # ════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Round 5 — Export Power BI + rapport final")
+    parser = argparse.ArgumentParser(description="Round 5 — Export Tableau + rapport final")
     parser.add_argument("--export-only", action="store_true",
-                        help="Seulement l'export Power BI (sans check infra)")
-    parser.add_argument("--format", choices=["csv", "excel"], default="csv",
-                        help="Format d'export Power BI (défaut : csv)")
+                        help="Seulement l'export Tableau (sans check infra)")
+    parser.add_argument("--format", choices=["csv", "excel", "hyper"], default="csv",
+                        help="Format d'export : csv (v1, défaut), excel (v1), hyper (v2)")
     parser.add_argument("--run-tests", action="store_true",
                         help="Lancer tous les tests pytest R1→R5")
     args = parser.parse_args()
@@ -264,7 +267,7 @@ def main() -> None:
 
     print(f"\n{'#'*65}")
     print(f"#  POC Avantages Sportifs — ROUND 5 FINAL")
-    print(f"#  Power BI + Démo + Clôture projet")
+    print(f"#  Tableau + Démo + Clôture projet")
     print(f"#  {debut.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'#'*65}")
 
@@ -278,12 +281,12 @@ def main() -> None:
     report = check_all_rounds()
     print_final_summary(report)
 
-    # Export Power BI
+    # Export Tableau
     print(f"\n{SEP}")
-    print(f"  EXPORT POWER BI ({args.format.upper()})")
+    print(f"  EXPORT TABLEAU ({args.format.upper()})")
     print(SEP)
-    from export_power_bi import main as export_pbi, OUTPUT_DIR
-    export_pbi(fmt=args.format, output_dir=OUTPUT_DIR)
+    from export_tableau import main as export_tableau, OUTPUT_DIR
+    export_tableau(fmt=args.format, output_dir=OUTPUT_DIR)
 
     if args.run_tests:
         run_all_tests()
@@ -292,7 +295,7 @@ def main() -> None:
 
     log_run(
         flow_name="run_round5",
-        etape="export_power_bi + rapport_final",
+        etape="export_tableau + rapport_final",
         statut="SUCCESS",
         debut=debut,
         nb_lignes=report.get("R3 avantages_calcules", {}).get("total_gold", 0),

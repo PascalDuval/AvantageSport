@@ -1,6 +1,6 @@
 # POC Avantages Sportifs — Documentation générale
 
-> Pipeline de données end-to-end : ingestion XLSX → normalisation → distances Google Maps → primes sportives → Delta Lake → orchestration Kestra → notifications Slack temps réel → Power BI
+> Pipeline de données end-to-end : ingestion XLSX → normalisation → distances Google Maps → primes sportives → Delta Lake → orchestration Kestra → notifications Slack temps réel → Tableau
 
 ---
 
@@ -13,7 +13,7 @@
 5. [Round 2 — Ingestion XLSX + ETL Silver + Google Maps](#5-round-2--ingestion-xlsx--etl-silver--google-maps)
 6. [Round 3 — Quality Check SODA + ETL Gold](#6-round-3--quality-check-soda--etl-gold)
 7. [Round 4 — Orchestration Kestra + Flask + Notifications Slack](#7-round-4--orchestration-kestra--flask--notifications-slack)
-8. [Round 5 — Power BI + Export CSV + Clôture projet](#8-round-5--power-bi--export-csv--clôture-projet)
+8. [Round 5 — Tableau + Export CSV/Hyper + Clôture projet](#8-round-5--tableau--export-csvhyper--clôture-projet)
 9. [Schéma de base de données](#9-schéma-de-base-de-données)
 10. [Architecture Delta Lake](#10-architecture-delta-lake)
 11. [SODA Core — Quality Check déclaratif](#11-soda-core--quality-check-déclaratif)
@@ -51,7 +51,7 @@ Ces deux fichiers XLSX constituent les seules données réelles du projet. Ils s
 
 ### Démarche et choix techniques pour le POC
 
-Le POC couvre l'ensemble du périmètre défini dans la note de cadrage (infrastructure, simulation Strava, ETL Medallion, contrôles qualité, orchestration, Power BI), tout en faisant des **choix délibérément plus simples** que ceux qui seront retenus en production :
+Le POC couvre l'ensemble du périmètre défini dans la note de cadrage (infrastructure, simulation Strava, ETL Medallion, contrôles qualité, orchestration, Tableau), tout en faisant des **choix délibérément plus simples** que ceux qui seront retenus en production :
 
 | Composant | Choix POC | Choix production envisagé |
 |-----------|-----------|--------------------------|
@@ -112,8 +112,8 @@ strava_activities (simulé) ┘        │
    temps réel          schedules automatiques
          │
          ▼
-   [Export Power BI — src/export_power_bi.py] ◄── 
-   7 datasets CSV ou Excel
+   [Export Tableau — src/export_tableau.py] ◄── 
+   7 datasets CSV / Excel / Hyper
    5 pages rapport · DAX What-If · recalcul scénario DRH
 ```
 
@@ -133,8 +133,9 @@ strava_activities (simulé) ┘        │
 | **Kestra** | Orchestrateur de workflows — 6 flows (00→05), schedules, UI | R4 |
 | **requests** | Appels HTTP sortants (Slack webhook, Kestra API) | R4 |
 | **Slack Incoming Webhooks** | Notifications temps réel dans un channel | R4 |
-| **openpyxl** | Export Excel multi-onglets pour Power BI | R5 |
-| **Power BI Desktop** | Rapport 5 pages, DAX What-If, connexion PostgreSQL/CSV | R5 |
+| **openpyxl** | Export Excel multi-onglets pour Tableau | R5 |
+| **tableauhyperapi** | Export Hyper natif Tableau (v2 dynamique) — `pip install tableauhyperapi` | R5 |
+| **Tableau Desktop** | Rapport 5 feuilles, Paramètre What-If, connexion PostgreSQL native ou Hyper | R5 |
 | **soda-core-postgres** | Quality Check déclaratif — 11 règles SodaCL (BLOQUANT + WARNING) | R3 |
 
 ### Pourquoi PostgreSQL plutôt qu'une autre base ?
@@ -145,7 +146,7 @@ Les données RH sont intrinsèquement relationnelles (salariés, activités, él
 |---------|------------|----------------------|
 | **Accès concurrent** | Multi-client natif — Flask + Kestra + pgAdmin écrivent simultanément | SQLite : un seul écrivain, verrou en écriture |
 | **Python** | psycopg2 + SQLAlchemy matures, zéro friction avec pandas | — |
-| **Power BI** | Driver ODBC officiel (psqlODBC) | — |
+| **Tableau** | Connecteur PostgreSQL natif (aucun driver ODBC) | — |
 | **Docker** | Image officielle, comportement production-identique | — |
 | **SQL analytique** | Fenêtrage, CTE, agrégations avancées utilisées dans les ETL et les contrôles qualité | MySQL : moins riche analytiquement |
 | **Données structurées** | Schéma strict, jointures, clés étrangères — adapté aux données RH normalisées | MongoDB : document store inadapté ici |
@@ -207,19 +208,19 @@ AvantageSport/
 │       └── avantages_calcules.yml      ← 2 règles Gold SodaCL
 │
 ├── logs/                               ← vide — généré au runtime
-├── reports/                            ← vide — généré par export_power_bi.py
+├── reports/                            ← vide — généré par export_tableau.py
 │
 ├── scripts/
 │   ├── run_round1.py                   ← infra + simulation Strava-like
 │   ├── run_round2.py                   ← ingestion XLSX + ETL Silver + Google Maps
 │   ├── run_round3.py                   ← quality check SODA + ETL Gold
 │   ├── run_round4.py                   ← vérification setup Kestra + Flask + Slack
-│   ├── run_round5.py                   ← export Power BI + bilan final
+│   ├── run_round5.py                   ← export Tableau + bilan final
 │   └── deploy_kestra_flows.py          ← push flows → Kestra API
 │
 ├── sql/
 │   ├── init.sql                        ← création des 9 tables PostgreSQL
-│   └── power_bi_queries.sql            ← requêtes source des 5 pages Power BI
+│   └── tableau_queries.sql             ← requêtes source des 5 feuilles Tableau
 │
 ├── src/
 │   ├── config.py                       ← constantes, paramètres sports, chemins Delta Lake
@@ -234,7 +235,7 @@ AvantageSport/
 │   ├── gmaps_client.py                 ← Google Maps API + cache PostgreSQL
 │   ├── flask_entry.py                  ← pont HTTP Kestra ↔ Python + UI saisie manuelle
 │   ├── slack_notifier.py               ← notifications Slack (Block Kit)
-│   └── export_power_bi.py              ← export 7 datasets CSV / Excel
+│   └── export_tableau.py               ← export 7 datasets CSV / Excel / Hyper
 │
 └── tests/
     ├── test_round1.py                  ← 11 tests
@@ -264,7 +265,7 @@ cp documentation/Donne_es_Sportive.xlsx data/raw/
 ls data/raw/    # doit contenir les deux XLSX
 ls data/delta/  # vide pour l'instant — sera peuplé par le pipeline
 ls logs/        # vide — généré au runtime
-ls reports/     # vide — généré par export_power_bi.py
+ls reports/     # vide — généré par export_tableau.py
 ```
 
 > Remplir ensuite `.env` avec vos valeurs (voir §3.3) avant de démarrer Docker.
@@ -954,14 +955,26 @@ Deux incompatibilités détectées et corrigées lors du déploiement automatiqu
 
 ---
 
-## 8. Round 5 — Power BI + Export CSV + Clôture projet
+## 8. Round 5 — Tableau + Export CSV/Hyper + Clôture projet
 
-### 8.1 Objectif
+### 8.1 Objectif et justification du choix Tableau
 
-Produire une **restitution visuelle complète** à partir des données Gold : 7 datasets exportés
-pour Power BI, un rapport 5 pages opérationnel avec DAX What-If, et la livraison des
-corrections R4 manquantes (`docker-compose.kestra.yml`, flow `00_pipeline_complet.yml`
-corrigé Kestra 1.3.x).
+Produire une **restitution visuelle complète** à partir des données Gold, avec deux niveaux d'export
+progressifs (v1 statique → v2 dynamique) et la livraison des corrections R4 manquantes.
+
+**Pourquoi Tableau plutôt que Power BI ?**
+
+| Critère | Tableau | Power BI |
+|---------|---------|---------|
+| Connexion PostgreSQL | Native (aucun driver) | Requiert psqlODBC |
+| Injection Python directe | **`tableauhyperapi`** → `.hyper` | Non disponible |
+| Déclenchement Kestra | Script Python → Hyper auto-régénéré | Refresh manuel |
+| Environnement data eng | Tableau Server/Cloud | Power BI Service (Microsoft) |
+| Licence POC | Trial 14 j ou Tableau Public | Requiert Microsoft 365 |
+
+Le gain principal : la librairie Python officielle `tableauhyperapi` permet de générer un extract
+`.hyper` depuis un script Python déclenché par Kestra — aucune manipulation manuelle requise pour
+actualiser le tableau de bord en production.
 
 ### 8.2 Nouveaux fichiers
 
@@ -974,21 +987,22 @@ projet12/
 │   └── 00_pipeline_complet.yml          ← corrigé Kestra 1.3.x
 │
 ├── src/
-│   └── export_power_bi.py               ← export 7 datasets CSV ou Excel
+│   └── export_tableau.py                ← export 7 datasets : CSV (v1), Excel (v1), Hyper (v2)
 │
 ├── sql/
-│   └── power_bi_queries.sql             ← 5 requêtes SQL (une par page PBI)
+│   └── tableau_queries.sql              ← 5 requêtes SQL (une par feuille Tableau)
 │
 ├── reports/
-│   ├── dax_measures.md                  ← mesures DAX copiables
-│   └── power_bi/                        ← créé automatiquement par export
+│   ├── tableau_calcs.md                 ← champs calculés Tableau copiables
+│   └── tableau/                         ← créé automatiquement par export
 │       ├── vue_globale.csv
 │       ├── primes_sportives.csv
 │       ├── journees_bienetre.csv
 │       ├── activites_sportives.csv
 │       ├── anomalies_qualite.csv
 │       ├── config_params.csv
-│       └── pipeline_logs.csv
+│       ├── pipeline_logs.csv
+│       └── poc_avantages_sportifs_*.hyper  ← export Hyper (v2)
 │
 ├── scripts/
 │   └── run_round5.py
@@ -997,32 +1011,42 @@ projet12/
     └── test_round5.py
 ```
 
-### 8.3 Connexion Power BI — 3 options
+### 8.3 Connexion Tableau — 3 options (v1 → v2)
 
-| Option | Description | Prérequis |
-|--------|-------------|-----------|
-| **A — PostgreSQL ODBC** | Connexion native, refresh en 1 clic | Driver psqlODBC |
-| **B — CSV** | Fichiers plats dans `reports/power_bi/` | Aucun |
-| **C — Excel** | Classeur multi-onglets | Aucun |
+| Option | Mode | Prérequis | Dynamisme |
+|--------|------|-----------|-----------|
+| **A — PostgreSQL live** | Tableau Desktop → PostgreSQL → localhost:5432 | Tableau Desktop | ★★★ Live |
+| **B — Extract Hyper** | `export_tableau.py --format hyper` | `tableauhyperapi` | ★★★ Auto via Kestra |
+| **C — CSV** | `export_tableau.py` (défaut, v1) | Aucun | ★ Statique |
 
 ```powershell
-# Option B/C : générer les exports
-python src/export_power_bi.py              # CSV (défaut)
-python src/export_power_bi.py --format excel  # Excel
+# Option C — CSV (v1, fallback universel)
+python src/export_tableau.py
+
+# Option B — Hyper extract (v2, dynamique)
+pip install tableauhyperapi
+python src/export_tableau.py --format hyper
+# → Tableau Desktop → Se connecter → Fichiers supplémentaires → *.hyper
+
+# Option A — Live PostgreSQL
+# Tableau Desktop → Se connecter → PostgreSQL
+# Serveur : localhost  Port : 5432  Base : poc_sport  User : admin
 ```
 
-### 8.4 Les 5 pages du rapport Power BI
+### 8.4 Les 5 feuilles du rapport Tableau
 
-| Page | Source CSV | Visuels clés |
-|------|------------|-------------|
-| 1 — Vue Globale | `vue_globale.csv` | KPI coût total, % éligibles, répartition par BU |
-| 2 — Primes Sportives | `primes_sportives.csv` | Scatter salaire/prime, slicer BU, What-If taux |
-| 3 — Journées Bien-être | `journees_bienetre.csv` | Distribution activités, ligne seuil 15, treemap sport |
-| 4 — Activités Sportives | `activites_sportives.csv` | Courbe mensuelle, top sports, heatmap BU × mois |
-| 5 — Anomalies & Qualité | `anomalies_qualite.csv` | Tableau règles QC, historique runs, logs pipeline |
+| Feuille | Source | Visuels clés |
+|---------|--------|-------------|
+| 1 — Vue Globale | `vue_globale` | Cartes KPI coût total + % éligibles, barres par BU |
+| 2 — Primes Sportives | `primes_sportives` | Nuage de points distance/prime, filtre éligible, Paramètre taux |
+| 3 — Journées Bien-être | `journees_bienetre` | Histogramme activités, ligne de référence à 15, treemap sport |
+| 4 — Activités Sportives | `activites_sportives` | Courbe temporelle mensuelle, barres par sport |
+| 5 — Anomalies & Qualité | `anomalies_qualite` | Tableau texte couleurs conditionnelles, courbe historique |
 
-**Paramètre What-If (page 2) :** glissière de taux (1 % → 15 %) + mesure DAX `Coût Simulé Primes`
-pour simuler l'impact financier sans toucher aux données.
+**Paramètre Tableau (équivalent DAX What-If) :**
+`Analyse → Créer un paramètre → "Taux Prime Simulation"` (Float 0,01–0,20, pas 0,01)
++ Champ calculé : `[Salaire_Brut] * [Taux Prime Simulation]`
+→ Curseur visible sur le dashboard pour la démo live.
 
 ### 8.5 Recalcul avec un nouveau taux (scénario DRH)
 
@@ -1033,19 +1057,24 @@ UPDATE config SET valeur = 'v2.0_taux7pct' WHERE cle = 'params_version';
 ```
 
 ```powershell
+# Relancer ETL Gold + régénérer le Hyper
 python scripts/run_round3.py --params-version v2.0_taux7pct
-python src/export_power_bi.py
-# → Actualiser Power BI Desktop (Ctrl+Alt+F5)
+python src/export_tableau.py --format hyper
+# → Tableau actualise automatiquement si le fichier .hyper est la source
 ```
 
 ### 8.6 Exécution
 
 ```powershell
-# Vérification complète R1→R5 + export CSV
+# Vérification complète R1→R5 + export CSV (v1)
 python scripts/run_round5.py
 
+# Export Hyper dynamique (v2)
+python scripts/run_round5.py --format hyper
+
 # Export seul
-python src/export_power_bi.py
+python src/export_tableau.py                  # CSV
+python src/export_tableau.py --format hyper   # Hyper
 ```
 
 Sortie attendue :
@@ -1053,9 +1082,9 @@ Sortie attendue :
   ✅ R1 strava_activities  total_acts=2905 | athletes=95 | sports=15
   ✅ R2 employees          total_emp=161  | nb_prime=68 | avec_dist=67
   ✅ R3 avantages_calcules total_gold=161 | eligibles=68 | cout_primes=106427.50
-  ✅ R3 data_quality       total_qc=9    | qc_ok=9
+  ✅ R3 data_quality       total_qc=11   | qc_ok=11
   ✅ R4 strava manual      manual_acts=X
-  📊 Export CSV → reports/power_bi/ (7 fichiers)
+  📊 Export Tableau → reports/tableau/ (7 fichiers)
 ```
 
 ### 8.7 KPI finaux — tableau de bord complet
@@ -1071,21 +1100,22 @@ Sortie attendue :
 | Éligibles journées BE (≥ 15 activités) | **~47** (29 %) |
 | Total jours bien-être accordés | **~235 jours** |
 | Activités simulées (seed 244542299) | **2 905** |
-| Règles qualité passées | **9 / 9** |
-| Tests automatisés | **~158 passed** |
+| Règles qualité passées (SODA) | **11 / 11** |
+| Tests automatisés | **~160 passed** |
 
 ### 8.8 Tests Round 5
 
 ```powershell
 pytest tests/test_round5.py -v
-# Résultat attendu : ~35 PASSED
+# Résultat attendu : ~36 PASSED (+ 3 SKIPPED si tableauhyperapi absent)
 ```
 
-- `TestExportCSV` (10 tests) : 7 fichiers CSV créés, 161 lignes primes, 68 éligibles, 9 règles QC, encodage UTF-8 BOM
-- `TestExportExcel` (3 tests) : fichier créé, ≥ 5 onglets, feuille primes correcte
-- `TestEndToEndCohérence` (13 tests) : cohérence R1→R4 (activités, employees, avantages, distances, gmaps_cache)
+- `TestExportCSV` (10 tests) : 7 fichiers CSV créés, 161 lignes primes, 68 éligibles, ≥ 9 règles QC, encodage UTF-8 BOM
+- `TestExportExcel` (3 tests) : fichier `.xlsx` créé, ≥ 5 onglets, feuille primes correcte
+- `TestExportHyper` (3 tests) : fichier `.hyper` créé et lisible — *skippé si `tableauhyperapi` absent*
+- `TestEndToEndCohérence` (12 tests) : cohérence R1→R4 (activités, employees, avantages, distances, gmaps_cache)
 - `TestDeltaLakeTroisCouches` (4 tests) : Bronze/Silver/Gold lisibles par DuckDB
-- `TestFichiersInfrastructure` (6 tests) : `docker-compose.kestra.yml` livré, flow 00 corrigé Kestra 1.3.x, SQL PBI présent
+- `TestFichiersInfrastructure` (6 tests) : `docker-compose.kestra.yml` livré, flow 00 corrigé Kestra 1.3.x, `tableau_queries.sql` présent
 
 ---
 
@@ -1225,13 +1255,13 @@ conn.execute("SELECT * FROM delta_scan('data/delta/silver/employees')")
 | Kestra `UnknownHostException: postgres` | Kestra pas sur `poc_network` | Utiliser `docker-compose.kestra.yml` (rejoint `poc_network`) |
 | Flow Kestra `422 Invalid type: INTEGER` | Type invalide en Kestra 1.3.x | Utiliser `INT` (et non `INTEGER`) dans les inputs |
 | Flow Kestra `422 io.kestra.plugin.flow.Subflow` | Plugin déprécié | Utiliser `io.kestra.plugin.core.flow.Subflow` |
-| `FileNotFoundError: reports/power_bi/` | Dossier absent | `mkdir reports/power_bi` |
+| `FileNotFoundError: reports/tableau/` | Dossier absent | `mkdir reports/tableau` |
 | `ModuleNotFoundError: openpyxl` | Paquet absent | `pip install openpyxl` |
 | CSV vides (0 lignes) | `avantages_calcules` vide | Relancer `python scripts/run_round3.py` |
-| Power BI "Impossible de se connecter" | PostgreSQL arrêté | `docker compose -f docker/docker-compose.postgres.yml up -d` |
-| ODBC "Driver not found" | psqlODBC non installé | Télécharger sur postgresql.org/ftp/odbc |
+| Tableau "Connexion refusée" (PostgreSQL) | PostgreSQL arrêté | `docker compose -f docker/docker-compose.postgres.yml up -d` |
+| `ImportError: tableauhyperapi` | Paquet absent | `pip install tableauhyperapi` |
 | Kestra "Unknown network poc_network" | PostgreSQL non démarré en premier | Démarrer `postgres` avant `kestra` |
-| Taux What-If ne change pas le coût | Mesure DAX non liée | Utiliser la mesure `Coût Simulé Primes` de `reports/dax_measures.md` |
+| Taux What-If ne change pas le coût | Champ calculé non lié au Paramètre | Utiliser le champ `Coût Simulé Total` de `reports/tableau_calcs.md` |
 | `ImportError: soda.scan` (Round 3) | soda-core-postgres non installé | `pip install soda-core-postgres==3.3.3` |
 | Exit code 2 sur scan SODA | Erreur datasource (credentials) | Vérifier `DB_HOST/USER/PASSWORD` dans `.env` |
 | Flask 500 sur `/api/quality/soda` | SODA absent ou scan échoué | Voir `logs/soda_runner.log` |
@@ -1361,7 +1391,7 @@ pytest tests/test_round5.py -v   # ~35 tests
 | **R2** | `test_round2.py` | **49** | Normalisation IDs/dates/salaires/modes/sports, règles d'éligibilité, Google Maps mock (déterministe), ingestion dry-run, Silver DB, Delta Lake Silver |
 | **R3** | `test_round3.py` | **~46** | ETL Gold (formule prime, journées BE, dry-run), Quality Check SQL v1 (9 règles, rapport HTML), avantages_calcules (161 lignes, 68 éligibles), Delta Lake Gold, fichiers SodaCL présents et valides, `soda_runner` (`SEVERITY_MAP`, config dynamique) |
 | **R4** | `test_round4.py` | **31** | Slack Block Kit formatter, endpoints Flask (`/health`, `/`, `/api/stats`, `/api/activity`, `/api/ingest`, `/api/notify`), 6 flows YAML Kestra présents et valides |
-| **R5** | `test_round5.py` | **~35** | Export CSV/Excel (7 datasets, encodage UTF-8 BOM), cohérence end-to-end R1→R4, Delta Lake 3 couches (Bronze/Silver/Gold) lisibles, fichiers infrastructure (docker-compose, SQL PBI) |
+| **R5** | `test_round5.py` | **~36** | Export CSV/Excel/Hyper (7 datasets, UTF-8 BOM), cohérence end-to-end R1→R4, Delta Lake 3 couches lisibles, fichiers infrastructure (docker-compose, `tableau_queries.sql`) |
 | **Total** | | **~172** | Pipeline complet de bout en bout |
 
 > **Prérequis pour tous les tests** : container `poc_postgres` actif (`docker ps`). Les tests Round 4 nécessitent Flask démarré. Les tests Round 3 SODA (`TestFichiersSoda`, `TestSodaRunner`) ne nécessitent pas de connexion DB — ils s'exécutent en isolation complète.
