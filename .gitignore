@@ -72,5 +72,9 @@ docker/volumes/
 # ── Great Expectations (secrets et résultats locaux) ─────────────
 great_expectations/uncommitted/
 
+# ── Logs applicatifs ─────────────────────────────────────────────
+hyperd.log
+logs/*.log
+
 # ── Documents de cadrage (usage interne uniquement) ───────────────
 notedecadrage.txt
