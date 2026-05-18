@@ -151,19 +151,22 @@ def run_soda_scan(suite: str = "all") -> dict:
 # 3. Parsing des résultats
 # ════════════════════════════════════════════════════════════════
 
-def parse_soda_results(raw: dict) -> list[dict]:
+def parse_soda_results(raw) -> list[dict]:
     """
     Convertit les résultats bruts SODA en liste de dicts normalisés,
     compatibles avec le schéma data_quality_results.
 
     Args:
-        raw: dict retourné par scan.get_scan_results().
+        raw: dict retourné par scan.get_scan_results(), ou liste vide.
 
     Returns:
         Liste de dicts {regle, table_cible, colonne, severite,
                         nb_total, nb_echecs, resultat, detail}.
     """
     parsed: list[dict] = []
+
+    if not raw or not isinstance(raw, dict):
+        return parsed
 
     for check in raw.get("checks", []):
         name    = check.get("name", "unnamed")

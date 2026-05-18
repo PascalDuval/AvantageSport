@@ -243,7 +243,7 @@ class TestExportHyper:
         with HyperProcess(telemetry=Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU) as hyper:
             with Connection(endpoint=hyper.endpoint, database=hyper_path) as connection:
                 tables = connection.catalog.get_table_names(schema="Extract")
-                table_names = [str(t.name) for t in tables]
+                table_names = [str(t.name).strip('"') for t in tables]
         assert "primes_sportives" in table_names, \
             f"Table 'primes_sportives' absente du fichier Hyper. Tables : {table_names}"
         assert len(table_names) >= 5, f"Attendu ≥ 5 tables dans le .hyper, obtenu {len(table_names)}"

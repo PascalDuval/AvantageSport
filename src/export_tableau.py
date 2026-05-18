@@ -308,22 +308,26 @@ def _pandas_dtype_to_sql_type(dtype) -> "SqlType":
 
 
 def _to_python(val):
-    """Convertit les types numpy en types Python natifs pour l'Inserter Hyper."""
+    """Convertit les types numpy/pandas en types Python natifs pour l'Inserter Hyper."""
     if val is None:
+        return None
+    if isinstance(val, float) and pd.isna(val):
         return None
     try:
         import numpy as np
-        if isinstance(val, (np.integer,)):
+        if isinstance(val, np.integer):
             return int(val)
-        if isinstance(val, (np.floating,)):
+        if isinstance(val, np.floating):
             return None if pd.isna(val) else float(val)
-        if isinstance(val, (np.bool_,)):
+        if isinstance(val, np.bool_):
             return bool(val)
     except Exception:
         pass
-    if isinstance(val, float) and pd.isna(val):
-        return None
-    return str(val) if not isinstance(val, (int, float, bool, str)) else val
+    if isinstance(val, pd.Timestamp):
+        return val.to_pydatetime()
+    if not isinstance(val, (int, float, bool, str)):
+        return str(val)
+    return val
 
 
 def export_to_hyper(output_dir: Path = OUTPUT_DIR) -> Path:
@@ -347,6 +351,12 @@ def export_to_hyper(output_dir: Path = OUTPUT_DIR) -> Path:
             "  pip install tableauhyperapi\n"
             "Puis relancer : python src/export_tableau.py --format hyper"
         )
+
+    import os
+    import tableauhyperapi as _hyper_pkg
+    _hyper_bin = Path(_hyper_pkg.__file__).parent / "bin" / "hyper"
+    if str(_hyper_bin) not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = str(_hyper_bin) + os.pathsep + os.environ.get("PATH", "")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     engine = get_engine()
