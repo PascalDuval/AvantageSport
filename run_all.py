@@ -112,7 +112,7 @@ def run_snippet(code: str, env: dict) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, tmp],
             env=env, cwd=str(ROOT),
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
     finally:
         try:
@@ -541,6 +541,7 @@ def main() -> None:
     # ── Environnement pour les sous-processus ─────────────────────────
     ENV: dict[str, str] = {
         **os.environ,
+        "PYTHONUTF8":       "1",        # force UTF-8 dans tous les sous-processus
         "TAUX_PRIME":       str(TAUX_PRIME),
         "SEUIL_MARCHE_KM":  str(SEUIL_MARCHE_KM),
         "SEUIL_VELO_KM":    str(SEUIL_VELO_KM),
