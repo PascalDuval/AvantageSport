@@ -352,7 +352,55 @@ docker compose -f docker/docker-compose.kestra.yml down
 > **Note Kestra** : le `docker-compose.kestra.yml` utilise `server local` (base H2 embarquée,
 > parfait pour le POC) et rejoint `poc_network` pour partager le réseau avec PostgreSQL.
 
-### 3.5 Se connecter à pgAdmin
+### 3.5 Script pipeline complet interactif (`run_all.py`)
+
+`run_all.py` enchaîne les 5 rounds en une seule commande interactive.
+Il collecte les paramètres, exécute chaque round, affiche les tests **PASSED / FAILED** et termine sur un bilan global.
+
+```powershell
+conda activate datascience2
+cd C:\Users\karap\OpenClassRooms\projet12
+python run_all.py
+```
+
+**Prérequis** : Docker PostgreSQL démarré (`docker compose -f docker/docker-compose.postgres.yml up -d`) et fichiers XLSX présents dans `data/raw/`.
+
+**Paramètres demandés au démarrage** (Entrée = valeur par défaut) :
+
+| Paramètre | Défaut | Rôle |
+|-----------|--------|------|
+| `TAUX_PRIME` | `0.05` | Taux de la prime sportive (5 %) |
+| `SEUIL_MARCHE_KM` | `15.0` | Distance max domicile/bureau marche/running |
+| `SEUIL_VELO_KM` | `25.0` | Distance max domicile/bureau vélo/trottinette |
+| `MIN_ACTIVITES_BE` | `15` | Activités/an minimum pour obtenir les jours BE |
+| `NB_JOURS_BE` | `5` | Nombre de jours bien-être accordés |
+| Monte Carlo min | `0` | Activités minimum simulées par mois et par salarié |
+| Monte Carlo max | `4` | Activités maximum simulées par mois et par salarié |
+
+**Ce que le script produit :**
+- Exécution en direct de `run_round1.py` → `run_round5.py` avec pause interactive entre chaque round
+- Injection automatique des paramètres dans la table `config` PostgreSQL avant Round 3
+- Démarrage/arrêt automatique de Flask pour Round 4
+- Aperçus de données après chaque round (top athlètes, éligibilité, coût des primes…)
+- Résultat de chaque test `pytest` : `✅ PASSED` ou `❌ FAILED`
+- Bilan final : tableau récapitulatif BD + résumé pass/fail par round
+
+**Résultats obtenus (run du 2026-05-19, valeurs par défaut)** :
+
+```
+  RÉSUMÉ DES TESTS :
+  ✅  Round 1      15 passés    0 échoués
+  ✅  Round 2      48 passés    0 échoués
+  ✅  Round 3      47 passés    0 échoués
+  ✅  Round 4      38 passés    0 échoués
+  ✅  Round 5      42 passés    0 échoués
+
+  Total : 190/190 tests passés (100 %)
+  ⏱  Durée totale : 46s  (0.8 min)
+  🎉  Pipeline R1→R5 complet — TOUS LES TESTS PASSÉS !
+```
+
+### 3.6 Se connecter à pgAdmin
 
 Ouvrir **http://localhost:5050**
 
