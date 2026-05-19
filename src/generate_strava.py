@@ -16,6 +16,7 @@ Usage:
 import argparse
 from calendar import monthrange
 import logging
+import os
 import random
 import sys
 from datetime import date, datetime, timedelta
@@ -40,9 +41,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SIMULATION_YEAR   = 2025
-ACTS_MIN_PER_MONTH = 0
-ACTS_MAX_PER_MONTH = 5
+SIMULATION_YEAR    = 2025
+ACTS_MIN_PER_MONTH = int(os.getenv("STRAVA_MIN_ACTS", "0"))
+ACTS_MAX_PER_MONTH = int(os.getenv("STRAVA_MAX_ACTS", "5"))
 COMMENT_RATE       = 0.20   # fixe — 20 % des activités ont un commentaire
 
 GENERIC_COMMENTS = [
